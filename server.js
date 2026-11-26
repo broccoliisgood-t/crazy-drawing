@@ -18,6 +18,7 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 4e6 });
 
 app.use(express.static(__dirname));
+
 // LAN address, so the QR code works for phones when the host opened http://localhost
 app.get('/info', (req, res) => {
   const ips = [];
@@ -41,6 +42,36 @@ app.get('/img/:code/:round/:pid', (req, res) => {
   res.set('Cache-Control', 'private, max-age=86400').type(d.mime).send(d.buf);
 });
 
+// Stroke data, so the big screen can replay each drawing line by line
+app.get('/strokes/:code/:round/:pid', (req, res) => {
+  const room = rooms.get(String(req.params.code).toUpperCase());
+  const d = room && room.drawings[+req.params.round] && room.drawings[+req.params.round][req.params.pid];
+  if (!d || !d.strokes) return res.status(404).end();
+  res.set('Cache-Control', 'private, max-age=86400').type('application/json').send(d.strokes);
+});
+
+// Accept only well-formed strokes: [{c:'#rrggbb', w:number, p:[[x,y],...]}], capped in size
+function cleanStrokes(raw) {
+  if (!Array.isArray(raw) || raw.length > 3000) return null;
+  let total = 0;
+  const out = [];
+  for (const st of raw) {
+    if (!st || !/^#[0-9a-fA-F]{6}$/.test(st.c) || !Array.isArray(st.p)) return null;
+    const w = Math.max(1, Math.min(120, +st.w || 4));
+    const pts = [];
+    for (const pt of st.p) {
+      if (!Array.isArray(pt)) return null;
+      const x = Math.round(+pt[0]), y = Math.round(+pt[1]);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+      pts.push([Math.max(-50, Math.min(770, x)), Math.max(-50, Math.min(770, y))]);
+    }
+    total += pts.length;
+    if (total > 40000) return null;
+    if (pts.length) out.push({ c: st.c, w, p: pts });
+  }
+  return JSON.stringify(out);
+}
+
 // ---------------- rooms ----------------
 const rooms = new Map();
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -54,13 +85,15 @@ const id = () => crypto.randomBytes(8).toString('hex');
 function cleanSettings(s = {}) {
   const rounds = (Array.isArray(s.rounds) ? s.rounds : []).slice(0, 20).map(r => ({
     prompt: String(r.prompt || '').trim().slice(0, 120) || 'วาดอะไรก็ได้ที่อยากวาด',
+    answer: String(r.answer || '').trim().slice(0, 60),
     seconds: Math.min(1800, Math.max(10, Math.round(+r.seconds || 60))),
   }));
   if (!rounds.length) rounds.push({ prompt: 'วาดอะไรก็ได้ที่อยากวาด', seconds: 60 });
   return {
     title: String(s.title || '').trim().slice(0, 60) || 'Draw Party',
     rounds,
-    voting: !!s.voting,
+    // answer: host picks drawings closest to the secret answer · vote: players vote · none: just the wall
+    mode: ['answer', 'vote', 'none'].includes(s.mode) ? s.mode : (s.voting ? 'vote' : 'answer'),
     voteSeconds: Math.min(600, Math.max(10, Math.round(+s.voteSeconds || 30))),
     showNames: s.showNames !== false,
     showPromptOnPhone: s.showPromptOnPhone !== false,
@@ -86,7 +119,7 @@ function playerList(room) {
 
 function roundDrawings(room, r) {
   const d = room.drawings[r] || {};
-  return Object.keys(d).map(pid => ({ pid, name: room.players.get(pid)?.name || '?', t: d[pid].t }))
+  return Object.keys(d).map(pid => ({ pid, name: room.players.get(pid)?.name || '?', t: d[pid].t, anim: !!d[pid].strokes }))
     .sort((a, b) => a.t - b.t);
 }
 
@@ -96,14 +129,24 @@ function tally(room, r) {
   return count;
 }
 
+// Points for a round: host picks give 3/2/1, votes give 1 each
+function score(room, r) {
+  if (room.settings.mode === 'answer') {
+    const o = {};
+    (room.picks[r] || []).forEach((pid, i) => { o[pid] = 3 - i; });
+    return o;
+  }
+  return tally(room, r);
+}
+
 function leaderboard(room) {
   const total = {};
   room.settings.rounds.forEach((_, r) => {
-    for (const [pid, n] of Object.entries(tally(room, r))) total[pid] = (total[pid] || 0) + n;
+    for (const [pid, n] of Object.entries(score(room, r))) total[pid] = (total[pid] || 0) + n;
   });
-  return [...room.players.values()].map(p => ({ pid: p.id, name: p.name, votes: total[p.id] || 0,
+  return [...room.players.values()].map(p => ({ pid: p.id, name: p.name, points: total[p.id] || 0,
     drawings: room.settings.rounds.filter((_, r) => room.drawings[r]?.[p.id]).length }))
-    .sort((a, b) => b.votes - a.votes || b.drawings - a.drawings);
+    .sort((a, b) => b.points - a.points || b.drawings - a.drawings);
 }
 
 function publicState(room) {
@@ -111,11 +154,13 @@ function publicState(room) {
   const st = {
     code: room.code, settings: room.settings, phase: room.phase, round: r,
     endsAt: room.endsAt, serverNow: Date.now(), players: playerList(room),
+    shown: !!room.shown[r],
   };
-  if (r >= 0 && ['drawing', 'gallery', 'voting', 'results'].includes(room.phase)) st.drawings = roundDrawings(room, r);
-  if (room.phase === 'results') st.tally = tally(room, r);
+  if (r >= 0 && ['drawing', 'gallery', 'voting', 'judging', 'results'].includes(room.phase)) st.drawings = roundDrawings(room, r);
+  if (room.phase === 'judging') st.picks = room.picks[r] || [];
+  if (room.phase === 'results') { st.tally = score(room, r); st.picks = room.picks[r] || []; }
   if (room.phase === 'final') {
-    st.allRounds = room.settings.rounds.map((rd, i) => ({ prompt: rd.prompt, drawings: roundDrawings(room, i), tally: tally(room, i) }));
+    st.allRounds = room.settings.rounds.map((rd, i) => ({ prompt: rd.prompt, answer: rd.answer, drawings: roundDrawings(room, i), tally: score(room, i) }));
     st.leaderboard = leaderboard(room);
   }
   return st;
@@ -134,9 +179,13 @@ function broadcast(room) {
         submitted: !!room.drawings[room.round]?.[p.id],
         votedFor: room.votes[room.round]?.[p.id] || null },
     };
-    // Hide the prompt on phones if the host wants it shown only on the big screen
-    if (!room.settings.showPromptOnPhone) mine.settings = { ...room.settings, rounds: room.settings.rounds.map(x => ({ seconds: x.seconds, prompt: '' })) };
-    if (room.phase === 'results') mine.myVotes = st.tally[p.id] || 0;
+    // Secret answers never reach phones until the reveal; the prompt can be big-screen only too
+    mine.settings = { ...room.settings, rounds: room.settings.rounds.map(x => ({ seconds: x.seconds, prompt: room.settings.showPromptOnPhone ? x.prompt : '' })) };
+    if (['judging', 'results'].includes(room.phase)) mine.answer = room.settings.rounds[room.round].answer;
+    if (room.phase === 'results') {
+      mine.myScore = st.tally[p.id] || 0;
+      mine.myRank = room.settings.mode === 'answer' ? (room.picks[room.round] || []).indexOf(p.id) + 1 : 0;
+    }
     if (room.phase === 'final') { mine.leaderboard = st.leaderboard; mine.allRounds = undefined; mine.myRounds = room.settings.rounds.map((_, i) => !!room.drawings[i]?.[p.id]); }
     for (const sid of p.sockets) io.to(sid).emit('state', mine);
   }
@@ -158,6 +207,12 @@ function startVoting(room) {
   setTimer(room, room.settings.voteSeconds * 1000, () => toResults(room));
   broadcast(room);
 }
+function startJudging(room) {
+  clearTimer(room);
+  room.phase = 'judging';
+  room.picks[room.round] = room.picks[room.round] || [];
+  broadcast(room);
+}
 function toResults(room) { clearTimer(room); room.phase = 'results'; broadcast(room); }
 function nextRound(room) {
   if (room.round + 1 < room.settings.rounds.length) startDrawing(room, room.round + 1);
@@ -169,8 +224,13 @@ function hostNext(room) {
     case 'drawing': // end now, but give phones the grace window to auto-submit what they drew
       if (room.endsAt && room.endsAt > Date.now()) { setTimer(room, 0, () => toGallery(room)); broadcast(room); }
       return;
-    case 'gallery': return room.settings.voting ? startVoting(room) : nextRound(room);
+    case 'gallery':
+      // First press plays the drawings on the big screen; the next press moves on
+      if (!room.shown[room.round]) { room.shown[room.round] = true; return broadcast(room); }
+      if (room.settings.mode === 'answer') return startJudging(room);
+      return room.settings.mode === 'vote' ? startVoting(room) : nextRound(room);
     case 'voting': return toResults(room);
+    case 'judging': return toResults(room);
     case 'results': return nextRound(room);
   }
 }
@@ -193,7 +253,7 @@ io.on('connection', socket => {
   socket.on('host:create', (settings, cb) => {
     const code = newCode();
     room = { code, hostToken: id(), settings: cleanSettings(settings), phase: 'lobby', round: -1,
-      players: new Map(), drawings: {}, votes: {}, timer: null, endsAt: null, touched: Date.now() };
+      players: new Map(), drawings: {}, votes: {}, picks: {}, shown: {}, timer: null, endsAt: null, touched: Date.now() };
     rooms.set(code, room);
     role = 'host';
     socket.join(`h:${code}`);
@@ -223,6 +283,16 @@ io.on('connection', socket => {
     setTimer(room, remaining, after);
     broadcast(room);
   });
+  // Host clicks drawings in order: 1st, 2nd, 3rd closest to the answer; click again to undo
+  socket.on('host:pick', pid => {
+    if (!isHost() || room.phase !== 'judging') return;
+    const r = room.round;
+    const list = room.picks[r] || (room.picks[r] = []);
+    const i = list.indexOf(pid);
+    if (i >= 0) list.splice(i, 1);
+    else if (list.length < 3 && room.drawings[r]?.[pid]) list.push(pid);
+    broadcast(room);
+  });
   socket.on('host:kick', pid => {
     if (!isHost()) return;
     const p = room.players.get(pid);
@@ -234,7 +304,7 @@ io.on('connection', socket => {
   socket.on('host:restart', () => {
     if (!isHost()) return;
     clearTimer(room);
-    room.phase = 'lobby'; room.round = -1; room.drawings = {}; room.votes = {};
+    room.phase = 'lobby'; room.round = -1; room.drawings = {}; room.votes = {}; room.picks = {}; room.shown = {};
     broadcast(room);
   });
 
@@ -255,14 +325,14 @@ io.on('connection', socket => {
     broadcast(r);
   });
 
-  socket.on('player:submit', ({ round, image } = {}, cb) => {
+  socket.on('player:submit', ({ round, image, strokes } = {}, cb) => {
     if (role !== 'player' || !room || room.phase !== 'drawing' || round !== room.round) return ack(cb, { ok: false });
     if (room.drawings[round][player.id]) return ack(cb, { ok: true, already: true });
     const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
     if (!m) return ack(cb, { ok: false });
     const buf = Buffer.from(m[2], 'base64');
     if (buf.length > MAX_IMAGE_BYTES) return ack(cb, { ok: false, error: 'รูปใหญ่เกินไป' });
-    room.drawings[round][player.id] = { buf, mime: m[1], t: Date.now() };
+    room.drawings[round][player.id] = { buf, mime: m[1], t: Date.now(), strokes: cleanStrokes(strokes) };
     ack(cb, { ok: true });
     broadcast(room);
     if (everyoneDone(room, 'draw')) { clearTimer(room); setTimeout(() => room.phase === 'drawing' && room.round === round && toGallery(room), 1200); }

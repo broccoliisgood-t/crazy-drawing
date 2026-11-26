@@ -122,7 +122,7 @@ function submit(auto) {
   sent = true; end();
   $('send').disabled = true;
   const image = cv.toDataURL('image/jpeg', 0.82);
-  socket.emit('player:submit', { round: state.round, image }, res => {
+  socket.emit('player:submit', { round: state.round, image, strokes }, res => {
     $('send').disabled = false;
     if (!res?.ok) { sent = false; if (!auto) alert(res?.error || 'ส่งไม่สำเร็จ ลองอีกครั้ง'); }
     else localStorage.removeItem(strokeKey);
@@ -147,7 +147,10 @@ function render() {
     show('v-draw'); tick(); return;
   }
 
-  if (s.phase === 'gallery') return wait('👀', 'ดูผลงานทุกคนบนจอกลาง', me.submitted ? 'รูปของคุณอยู่บนจอแล้ว' : 'รอบนี้คุณไม่ได้ส่งรูป');
+  if (s.phase === 'gallery') {
+    if (!s.shown) return wait('⏰', 'หมดเวลา!', me.submitted ? 'ส่งรูปแล้ว รอ Host เปิดรูปบนจอกลาง' : 'รอบนี้คุณไม่ได้ส่งรูป');
+    return wait('👀', 'ดูรูปทุกคนบนจอกลาง', 'รอเฉลยคำตอบ…');
+  }
 
   if (s.phase === 'voting') {
     const others = s.drawings.map((d, i) => ({ ...d, no: i + 1 })).filter(d => d.pid !== me.id);
@@ -170,16 +173,26 @@ function render() {
     show('v-vote'); tick(); return;
   }
 
+  if (s.phase === 'judging') {
+    return wait('🤔', s.answer ? `เฉลย: ${s.answer}` : 'เฉลยแล้ว!', 'Host กำลังเลือกรูปที่ใกล้คำตอบที่สุด…');
+  }
+
   if (s.phase === 'results') {
-    const n = s.myVotes || 0;
+    const n = s.myScore || 0;
+    if (s.settings.mode === 'answer') {
+      const sub = s.answer ? `คำตอบคือ "${s.answer}"` : 'ดูจอกลางได้เลย';
+      if (s.myRank) return wait(['🥇', '🥈', '🥉'][s.myRank - 1], `คุณได้อันดับ ${s.myRank}! +${n} คะแนน`, sub);
+      return wait('🎨', 'รอบนี้ยังไม่ติดอันดับ สู้ต่อ!', sub);
+    }
     return wait(n ? '🏆' : '🎉', n ? `รูปของคุณได้ ${n} โหวต!` : 'ประกาศผลบนจอกลาง', 'ดูจอกลางได้เลย');
   }
 
   if (s.phase === 'final') {
-    if (!s.settings.voting) return wait('🎨', 'จบเกมแล้ว ขอบคุณที่ร่วมสนุก!', 'ดูรูปทุกคนบนจอกลาง');
+    if (s.settings.mode === 'none') return wait('🎨', 'จบเกมแล้ว ขอบคุณที่ร่วมสนุก!', 'ดูรูปทุกคนบนจอกลาง');
+    const unit = s.settings.mode === 'answer' ? 'คะแนน' : 'โหวต';
     const idx = s.leaderboard.findIndex(p => p.pid === me.id);
     const mine = s.leaderboard[idx];
-    return wait(idx === 0 && mine?.votes ? '👑' : '🎨', 'จบเกมแล้ว!', mine ? `คุณได้ ${mine.votes} โหวต · อันดับที่ ${idx + 1} จาก ${s.leaderboard.length}` : '');
+    return wait(idx === 0 && mine?.points ? '👑' : '🎨', 'จบเกมแล้ว!', mine ? `คุณได้ ${mine.points} ${unit} · อันดับที่ ${idx + 1} จาก ${s.leaderboard.length}` : '');
   }
 }
 

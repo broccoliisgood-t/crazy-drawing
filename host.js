@@ -1,16 +1,21 @@
 const $ = id => document.getElementById(id);
 const socket = io();
 
-const PROMPTS = [
-  'แมวใส่แว่นกันแดดนั่งชายหาด', 'ช้างเล่นสเก็ตบอร์ด', 'บ้านในฝันของคุณ', 'หัวหน้าตอนวันจันทร์', 'อาหารจานโปรด',
-  'ไดโนเสาร์ไปทำงานออฟฟิศ', 'มนุษย์ต่างดาวกินส้มตำ', 'ตัวเองอีก 10 ปีข้างหน้า', 'สัตว์ประจำทีมของเรา', 'วันหยุดที่ดีที่สุด',
-  'ปลาทองขับรถตุ๊กตุ๊ก', 'หุ่นยนต์ทำอาหาร', 'สิ่งที่ทำให้ยิ้มได้ทุกวัน', 'ซูเปอร์ฮีโร่ประจำออฟฟิศ', 'ต้นไม้ที่ออกผลเป็นขนม',
-  'เพนกวินไปเที่ยวทะเลทราย', 'ประชุมออนไลน์ที่วุ่นวายที่สุด', 'รถไฟฟ้าแห่งอนาคต', 'ช่วงเวลาที่เขินที่สุด', 'ตัวละครในฝันของคุณ',
-  'ปาร์ตี้สิ้นปี', 'ยานอวกาศรูปทุเรียน', 'กาแฟแก้วแรกของวัน', 'สัตว์เลี้ยงในอุดมคติ', 'เมืองใต้น้ำ',
+// [prompt shown on screen, secret answer]
+const PAIRS = [
+  ['วาดสัตว์ที่เกี่ยวกับคริสต์มาส', 'ไก่งวง'], ['วาดสัตว์ที่เกี่ยวกับคริสต์มาส', 'กวางเรนเดียร์'], ['วาดของที่เกี่ยวกับคริสต์มาส', 'ต้นคริสต์มาส'],
+  ['วาดของที่เกี่ยวกับคริสต์มาส', 'ถุงเท้าคริสต์มาส'], ['วาดตัวละครคริสต์มาส', 'ซานตาคลอส'], ['วาดตัวละครคริสต์มาส', 'มนุษย์หิมะ'],
+  ['วาดสัตว์', 'ช้าง'], ['วาดสัตว์', 'ยีราฟ'], ['วาดสัตว์', 'เพนกวิน'], ['วาดสัตว์', 'ปลาหมึก'], ['วาดสัตว์', 'แมวนอนหลับ'],
+  ['วาดผลไม้', 'ทุเรียน'], ['วาดผลไม้', 'สับปะรด'], ['วาดผลไม้', 'แตงโม'], ['วาดอาหาร', 'ส้มตำ'], ['วาดอาหาร', 'ข้าวมันไก่'],
+  ['วาดอาหาร', 'พิซซ่า'], ['วาดขนม', 'โดนัท'], ['วาดยานพาหนะ', 'ตุ๊กตุ๊ก'], ['วาดยานพาหนะ', 'เครื่องบิน'], ['วาดยานพาหนะ', 'จักรยาน'],
+  ['วาดสถานที่', 'ชายหาด'], ['วาดสถานที่', 'วัด'], ['วาดสิ่งของในบ้าน', 'พัดลม'], ['วาดสิ่งของในบ้าน', 'ตู้เย็น'], ['วาดอาชีพ', 'หมอ'],
+  ['วาดอาชีพ', 'นักบินอวกาศ'], ['วาดกีฬา', 'ฟุตบอล'], ['วาดกีฬา', 'มวยไทย'], ['วาดสิ่งของในออฟฟิศ', 'เครื่องถ่ายเอกสาร'], ['วาดเครื่องดนตรี', 'กีตาร์'],
 ];
 const TIMES = [[30, '30 วินาที'], [60, '1 นาที'], [90, '1 นาที 30 วิ'], [120, '2 นาที'], [180, '3 นาที'], [300, '5 นาที'], [420, '7 นาที'], [600, '10 นาที'], [900, '15 นาที']];
 const fmtDur = s => s < 60 ? `${s} วินาที` : (s % 60 ? `${Math.floor(s / 60)} นาที ${s % 60} วิ` : `${s / 60} นาที`);
-const randPrompt = (avoid = []) => { const pool = PROMPTS.filter(p => !avoid.includes(p)); return pool[Math.floor(Math.random() * pool.length)] || PROMPTS[0]; };
+const randPair = (avoid = []) => { const pool = PAIRS.filter(p => !avoid.includes(p[1])); return pool[Math.floor(Math.random() * pool.length)] || PAIRS[0]; };
+const newRound = (avoid, seconds = 60) => { const [prompt, answer] = randPair(avoid); return { prompt, answer, seconds }; };
+const MODE = { answer: 'Host ตัดสิน', vote: 'โหวต', none: 'ไม่แข่ง' };
 
 function el(tag, props = {}, ...kids) {
   const n = document.createElement(tag);
@@ -24,34 +29,38 @@ function el(tag, props = {}, ...kids) {
 }
 
 // ===================== BUILDER =====================
-let settings = JSON.parse(localStorage.getItem('dp_settings') || 'null') || {
-  title: '', maxPlayers: 30, voting: true, voteSeconds: 30, showNames: true, showPromptOnPhone: true,
-  rounds: [{ prompt: randPrompt(), seconds: 120 }],
+let settings = JSON.parse(localStorage.getItem('dp_settings2') || 'null') || {
+  title: '', maxPlayers: 30, mode: 'answer', voteSeconds: 30, showNames: true, showPromptOnPhone: true,
+  rounds: [newRound([])],
 };
+let showAnswers = false;
 
 function readBuilder() {
   settings.title = $('title').value;
   settings.maxPlayers = +$('maxPlayers').value || 30;
-  settings.voting = $('voting').checked;
+  settings.mode = $('mode').value;
   settings.voteSeconds = +$('voteSeconds').value;
   settings.showNames = $('showNames').checked;
   settings.showPromptOnPhone = $('showPromptOnPhone').checked;
-  localStorage.setItem('dp_settings', JSON.stringify(settings));
+  localStorage.setItem('dp_settings2', JSON.stringify(settings));
 }
 
 function renderRounds() {
   const box = $('rounds'); box.textContent = '';
   settings.rounds.forEach((r, i) => {
-    const inp = el('input', { class: 'input', maxlength: 120, placeholder: 'โจทย์ เช่น แมวใส่แว่นกันแดด' });
+    const inp = el('input', { class: 'input', maxlength: 120, placeholder: 'โจทย์ เช่น วาดสัตว์' });
     inp.value = r.prompt;
     inp.addEventListener('input', () => { r.prompt = inp.value; summarize(); });
+    const ans = el('input', { class: 'input ans', maxlength: 60, autocomplete: 'off', type: showAnswers ? 'text' : 'password', placeholder: 'คำตอบ เช่น ช้าง' });
+    ans.value = r.answer || '';
+    ans.addEventListener('input', () => { r.answer = ans.value; summarize(); });
     const sel = el('select', { class: 'input' }, TIMES.map(([v, t]) => el('option', { value: v, text: t })));
     if (!TIMES.some(([v]) => v === r.seconds)) sel.append(el('option', { value: r.seconds, text: fmtDur(r.seconds) }));
     sel.value = r.seconds;
     sel.addEventListener('change', () => { r.seconds = +sel.value; summarize(); });
     box.append(el('div', { class: 'round' },
-      el('div', { class: 'num', text: i + 1 }), inp,
-      el('button', { class: 'iconbtn', title: 'สุ่มโจทย์', onclick: () => { r.prompt = randPrompt(settings.rounds.map(x => x.prompt)); inp.value = r.prompt; summarize(); } }, '🎲'),
+      el('div', { class: 'num', text: i + 1 }), inp, ans,
+      el('button', { class: 'iconbtn dice', title: 'สุ่มโจทย์และคำตอบ', onclick: () => { const [p, a] = randPair(settings.rounds.map(x => x.answer)); r.prompt = p; r.answer = a; inp.value = p; ans.value = a; summarize(); } }, '🎲'),
       sel,
       el('button', { class: 'iconbtn del', title: 'ลบรอบนี้', onclick: () => { if (settings.rounds.length > 1) { settings.rounds.splice(i, 1); renderRounds(); } } }, '✕')));
   });
@@ -69,27 +78,35 @@ function summarize() {
   $('sumRoundsP').textContent = n === 1
     ? `ทุกคนวาดบนมือถือ ${fmtDur(s.rounds[0].seconds)} จากนั้นรูปทั้งหมดจะขึ้นจอกลางพร้อมกัน`
     : `วาดรวม ${fmtDur(drawSec)} จบแต่ละรอบ รูปทุกคนจะขึ้นจอกลาง ก่อนไปโจทย์ถัดไป`;
-  $('sumVote').textContent = s.voting ? 'เปิด' : 'ปิด';
-  $('sumVoteP').textContent = s.voting
-    ? `ทุกคนมีเวลา ${fmtDur(s.voteSeconds)} โหวตรูปที่ชอบที่สุด (โหวตให้ตัวเองไม่ได้) แล้วประกาศผลบนจอ`
-    : 'แค่วาดแล้วชมรูปบนจอกลาง ไม่ต้องแข่ง ทุกคนสนุกได้เท่ากัน';
+  $('sumVote').textContent = MODE[s.mode];
+  const missing = s.rounds.filter(r => !String(r.answer || '').trim()).length;
+  $('sumVoteP').textContent = {
+    answer: `จบแต่ละรอบ จอจะเฉลยคำตอบ แล้ว Host คลิกเลือกรูปที่ใกล้คำตอบที่สุด อันดับ 1–3 ได้ 3, 2, 1 คะแนน` + (missing ? ` · ยังไม่ได้ใส่คำตอบ ${missing} รอบ` : ''),
+    vote: `ทุกคนมีเวลา ${fmtDur(s.voteSeconds)} โหวตรูปที่ชอบที่สุด (โหวตให้ตัวเองไม่ได้) แล้วประกาศผลบนจอ`,
+    none: 'แค่วาดแล้วชมรูปบนจอกลาง ไม่ต้องแข่ง ทุกคนสนุกได้เท่ากัน',
+  }[s.mode];
   $('sumWall').textContent = s.showNames ? 'มีชื่อ' : 'ไม่ระบุชื่อ';
   $('sumWallP').textContent = s.showNames
     ? 'ทุกรูปบนจอกลางมีชื่อคนวาดกำกับ'
     : 'ซ่อนชื่อคนวาด ทายกันเองว่าใครวาดรูปไหน';
-  $('voteSecWrap').style.opacity = s.voting ? 1 : .4;
+  $('voteSecWrap').classList.toggle('hidden', s.mode !== 'vote');
 }
 
 function loadBuilder() {
   $('title').value = settings.title; $('maxPlayers').value = settings.maxPlayers;
-  $('voting').checked = settings.voting; $('voteSeconds').value = settings.voteSeconds;
+  $('mode').value = settings.mode || 'answer'; $('voteSeconds').value = settings.voteSeconds;
   $('showNames').checked = settings.showNames; $('showPromptOnPhone').checked = settings.showPromptOnPhone;
   renderRounds();
 }
-['title', 'maxPlayers', 'voting', 'voteSeconds', 'showNames', 'showPromptOnPhone'].forEach(k => $(k).addEventListener('input', summarize));
+['title', 'maxPlayers', 'mode', 'voteSeconds', 'showNames', 'showPromptOnPhone'].forEach(k => $(k).addEventListener('input', summarize));
+$('toggleAns').onclick = () => {
+  showAnswers = !showAnswers;
+  $('toggleAns').textContent = showAnswers ? '🙈 ซ่อนคำตอบ' : '👁 แสดงคำตอบ';
+  document.querySelectorAll('.round .ans').forEach(i => { i.type = showAnswers ? 'text' : 'password'; });
+};
 $('addRound').onclick = () => {
   if (settings.rounds.length >= 20) return;
-  settings.rounds.push({ prompt: randPrompt(settings.rounds.map(x => x.prompt)), seconds: settings.rounds.at(-1)?.seconds || 120 });
+  settings.rounds.push(newRound(settings.rounds.map(x => x.answer), settings.rounds.at(-1)?.seconds || 120));
   renderRounds();
 };
 
@@ -146,7 +163,7 @@ function chips(box, players, mode) {
 function tileSize(n) { return n <= 4 ? '300px' : n <= 9 ? '240px' : n <= 16 ? '200px' : n <= 30 ? '170px' : '140px'; }
 
 // Keep tiles keyed by drawing so re-renders don't replay the pop-in animation
-function renderWall(box, round, drawings, { numbered = false, tally = null, names = true } = {}) {
+function renderWall(box, round, drawings, { numbered = false, tally = null, names = true, picks = null, animate = false } = {}) {
   const key = `${state.code}:${round}`;
   if (box.dataset.key !== key) { box.textContent = ''; box.dataset.key = key; }
   box.style.setProperty('--tile', tileSize(drawings.length));
@@ -155,13 +172,22 @@ function renderWall(box, round, drawings, { numbered = false, tally = null, name
     let t = have.get(d.pid);
     const name = names ? d.name : '';
     if (!t) {
-      t = el('div', { class: 'tile', style: `animation-delay:${Math.min(i, 20) * 70}ms` },
-        el('img', { src: imgUrl(round, d.pid), alt: `รูปของ ${d.name}`, loading: 'lazy' }));
+      let media;
+      if (animate && d.anim) {
+        media = el('canvas', { width: 720, height: 720 });
+        media.getContext('2d').fillStyle = '#fff'; media.getContext('2d').fillRect(0, 0, 720, 720);
+        loadStrokes(round, d.pid).then(st => st ? animateStrokes(media, st, ANIM_MS, Math.min(i, 30) * 150)
+          : media.replaceWith(el('img', { src: imgUrl(round, d.pid), alt: '' })));
+      } else media = el('img', { src: imgUrl(round, d.pid), alt: `รูปของ ${d.name}`, loading: 'lazy' });
+      t = el('div', { class: 'tile', style: `animation-delay:${Math.min(i, 20) * 70}ms` }, media);
       t.dataset.pid = d.pid;
-      t.addEventListener('click', () => openLightbox(imgUrl(round, d.pid), name));
+      t.addEventListener('click', () => state.phase === 'judging' ? socket.emit('host:pick', d.pid) : openLightbox(round, d, name));
       box.append(t);
     }
-    t.querySelectorAll('.nm,.no,.votes').forEach(n => n.remove());
+    t.querySelectorAll('.nm,.no,.votes,.rank').forEach(n => n.remove());
+    const rank = picks ? picks.indexOf(d.pid) : -1;
+    t.classList.toggle('picked', rank >= 0);
+    if (rank >= 0) t.append(el('div', { class: 'rank', text: MEDALS[rank] }));
     if (name) t.append(el('div', { class: 'nm', text: name }));
     if (numbered) t.append(el('div', { class: 'no', text: i + 1 }));
     if (tally) t.append(el('div', { class: 'votes', text: `${tally[d.pid] || 0}` }));
@@ -169,7 +195,49 @@ function renderWall(box, round, drawings, { numbered = false, tally = null, name
   if (!drawings.length && !box.querySelector('.empty')) box.append(el('div', { class: 'empty', text: 'ยังไม่มีรูปในรอบนี้' }));
 }
 
-function openLightbox(src, cap) { $('lbImg').src = src; $('lbCap').textContent = cap; $('lightbox').classList.remove('hidden'); }
+const MEDALS = ['🥇', '🥈', '🥉'];
+const ANIM_MS = 6000;
+
+// ---- line-by-line replay of a player's strokes ----
+const strokeCache = new Map();
+function loadStrokes(r, pid) {
+  const k = `${state.code}:${r}:${pid}`;
+  if (!strokeCache.has(k)) strokeCache.set(k, fetch(`/strokes/${state.code}/${r}/${pid}`).then(x => x.ok ? x.json() : null).catch(() => null));
+  return strokeCache.get(k);
+}
+function animateStrokes(canvas, strokes, duration = ANIM_MS, delay = 0) {
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const total = strokes.reduce((a, st) => a + st.p.length, 0);
+  const token = {}; canvas._anim = token;
+  if (!total) return;
+  let si = 0, pi = 0, drawn = 0, t0 = null;
+  const step = ts => {
+    if (canvas._anim !== token) return; // a newer replay took over
+    if (t0 == null) t0 = ts;
+    const target = Math.min(total, Math.ceil(total * Math.min(1, (ts - t0) / duration)));
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    while (drawn < target) {
+      const st = strokes[si], p = st.p;
+      ctx.strokeStyle = ctx.fillStyle = st.c; ctx.lineWidth = st.w;
+      ctx.beginPath();
+      if (pi === 0) { ctx.arc(p[0][0], p[0][1], st.w / 2, 0, Math.PI * 2); ctx.fill(); }
+      else { ctx.moveTo(p[pi - 1][0], p[pi - 1][1]); ctx.lineTo(p[pi][0], p[pi][1]); ctx.stroke(); }
+      pi++; drawn++;
+      if (pi >= p.length) { si++; pi = 0; }
+    }
+    if (drawn < total) requestAnimationFrame(step);
+  };
+  setTimeout(() => requestAnimationFrame(step), delay);
+}
+// Enlarged view replays the drawing stroke by stroke when stroke data exists
+function openLightbox(round, d, cap) {
+  $('lbCap').textContent = cap;
+  $('lbImg').classList.toggle('hidden', !!d.anim); $('lbCv').classList.toggle('hidden', !d.anim);
+  if (d.anim) loadStrokes(round, d.pid).then(st => st && animateStrokes($('lbCv'), st, 4000));
+  else $('lbImg').src = imgUrl(round, d.pid);
+  $('lightbox').classList.remove('hidden');
+}
 $('lightbox').onclick = () => $('lightbox').classList.add('hidden');
 
 let finalTab = 0;
@@ -180,10 +248,11 @@ function render() {
   $('roomCode').textContent = s.code;
   $('roundInfo').textContent = r >= 0 && s.phase !== 'final' ? `รอบ ${r + 1}/${total}` : '';
   $('btnAdd').classList.toggle('hidden', !['drawing', 'voting'].includes(s.phase));
+  $('btnReplay').classList.toggle('hidden', !(s.phase === 'gallery' && s.shown));
   const nextLabel = {
     lobby: 'เริ่มเกม →', drawing: 'จบเวลาเลย →',
-    gallery: s.settings.voting ? 'เริ่มโหวต →' : (r + 1 < total ? `รอบที่ ${r + 2} →` : 'สรุปผล →'),
-    voting: 'ปิดโหวต →', results: r + 1 < total ? `รอบที่ ${r + 2} →` : 'สรุปผล →',
+    gallery: !s.shown ? 'แสดงรูปวาด ▶' : s.settings.mode === 'answer' ? 'เฉลยคำตอบ →' : s.settings.mode === 'vote' ? 'เริ่มโหวต →' : (r + 1 < total ? `รอบที่ ${r + 2} →` : 'สรุปผล →'),
+    voting: 'ปิดโหวต →', judging: 'ประกาศผล →', results: r + 1 < total ? `รอบที่ ${r + 2} →` : 'สรุปผล →',
   }[s.phase];
   $('btnNext').classList.toggle('hidden', !nextLabel);
   if (nextLabel) $('btnNext').textContent = nextLabel;
@@ -198,6 +267,16 @@ function render() {
     $('btnNext').disabled = !online.length;
   } else $('btnNext').disabled = false;
 
+  if (s.phase === 'gallery' && !s.shown) {
+    show('s-drawing');
+    $('drawLabel').textContent = `รอบ ${r + 1} จาก ${total}`;
+    $('drawPrompt').textContent = R[r].prompt;
+    $('drawTimer').textContent = 'หมดเวลา! ⏰'; $('drawTimer').classList.remove('low');
+    $('drawBar').style.width = '0%';
+    $('drawCount').textContent = `ส่งรูปเข้ามา ${s.drawings.length} รูป · กด "แสดงรูปวาด" เพื่อเปิดบนจอ`;
+    chips($('drawChips'), s.players, 'draw');
+  }
+
   if (s.phase === 'drawing') {
     show('s-drawing');
     $('drawLabel').textContent = `รอบ ${r + 1} จาก ${total} · วาดเลย!`;
@@ -207,22 +286,31 @@ function render() {
     chips($('drawChips'), s.players, 'draw');
   }
 
-  if (s.phase === 'gallery' || s.phase === 'voting') {
+  $('s-wall').classList.toggle('judging', s.phase === 'judging');
+  if ((s.phase === 'gallery' && s.shown) || s.phase === 'voting' || s.phase === 'judging') {
     show('s-wall');
-    const voting = s.phase === 'voting';
-    $('wallLabel').textContent = `รอบ ${r + 1} · ${voting ? 'โหวตบนมือถือได้เลย' : 'ผลงานทุกคน'}`;
-    $('wallTitle').textContent = R[r].prompt;
+    const voting = s.phase === 'voting', judging = s.phase === 'judging';
+    $('wallLabel').textContent = `รอบ ${r + 1} · ${voting ? 'โหวตบนมือถือได้เลย' : judging ? `โจทย์: ${R[r].prompt}` : 'ผลงานทุกคน'}`;
+    $('wallTitle').textContent = '';
+    if (judging) $('wallTitle').append('เฉลย: ', el('span', { class: 'reveal', text: R[r].answer || '—' }));
+    else $('wallTitle').textContent = R[r].prompt;
+    $('wallHint').classList.toggle('hidden', !judging);
+    $('wallHint').textContent = s.picks?.length >= 3 ? 'เลือกครบ 3 อันดับแล้ว กด "ประกาศผล" ได้เลย' : `คลิกรูปที่ใกล้คำตอบที่สุด เรียงตามอันดับ ${s.picks?.length ? `(เลือกแล้ว ${s.picks.length}/3)` : '1 → 3'} · คลิกซ้ำเพื่อยกเลิก`;
     $('voteTimer').classList.toggle('hidden', !voting);
     $('wallCount').textContent = voting
       ? `โหวตแล้ว ${s.players.filter(p => p.voted).length}/${online.length}`
       : `${s.drawings.length} รูป`;
-    renderWall($('wall'), r, s.drawings, { numbered: voting, names: s.settings.showNames });
+    renderWall($('wall'), r, s.drawings, { numbered: voting, names: s.settings.showNames, picks: judging ? s.picks : null, animate: s.phase === 'gallery' });
   }
 
   if (s.phase === 'results') {
     show('s-results');
+    const isAns = s.settings.mode === 'answer', unit = isAns ? 'คะแนน' : 'โหวต';
     $('resLabel').textContent = `รอบ ${r + 1} · ${R[r].prompt}`;
-    const ranked = [...s.drawings].sort((a, b) => (s.tally[b.pid] || 0) - (s.tally[a.pid] || 0)).filter(d => s.tally[d.pid]);
+    $('resTitle').textContent = isAns && R[r].answer ? `คำตอบคือ "${R[r].answer}" 🏆` : 'ผลรอบนี้ 🏆';
+    const ranked = isAns
+      ? s.picks.map(pid => s.drawings.find(d => d.pid === pid)).filter(Boolean)
+      : [...s.drawings].sort((a, b) => (s.tally[b.pid] || 0) - (s.tally[a.pid] || 0)).filter(d => s.tally[d.pid]);
     const pod = $('podium'); pod.textContent = '';
     const order = [1, 0, 2].filter(i => ranked[i]);
     order.forEach(i => {
@@ -230,23 +318,24 @@ function render() {
       pod.append(el('div', { class: 'p' + (i === 0 ? ' first' : ''), style: `animation-delay:${(2 - i) * 350}ms` },
         el('div', { class: 'medal', text: ['🥇', '🥈', '🥉'][i] }),
         el('div', { class: 'tile' }, el('img', { src: imgUrl(r, d.pid), alt: '' }), el('div', { class: 'nm', text: d.name })),
-        el('div', { class: 'vv', text: `${s.tally[d.pid]} โหวต` })));
+        el('div', { class: 'vv', text: `${s.tally[d.pid]} ${unit}` })));
     });
-    if (!ranked.length) pod.append(el('div', { class: 'empty', text: 'ไม่มีใครโหวตในรอบนี้' }));
-    renderWall($('resWall'), r, s.drawings, { tally: s.tally, names: true });
+    if (!ranked.length) pod.append(el('div', { class: 'empty', text: isAns ? 'รอบนี้ไม่มีผู้ชนะ' : 'ไม่มีใครโหวตในรอบนี้' }));
+    renderWall($('resWall'), r, s.drawings, { tally: isAns ? null : s.tally, picks: isAns ? s.picks : null, names: true });
   }
 
   if (s.phase === 'final') {
     show('s-final');
     $('finalTitle').textContent = s.settings.title;
-    $('finalLbWrap').classList.toggle('hidden', !s.settings.voting);
+    $('finalLbWrap').classList.toggle('hidden', s.settings.mode === 'none');
+    const unit = s.settings.mode === 'answer' ? 'คะแนน' : 'โหวต';
     const lb = $('finalLb'); lb.textContent = '';
-    s.leaderboard.slice(0, 10).forEach((p, i) => lb.append(el('li', {}, el('span', { text: `${i + 1}. ${p.name}` }), el('span', { text: `${p.votes} โหวต` }))));
+    s.leaderboard.slice(0, 10).forEach((p, i) => lb.append(el('li', {}, el('span', { text: `${i + 1}. ${p.name}` }), el('span', { text: `${p.points} ${unit}` }))));
     const tabs = $('finalTabs'); tabs.textContent = '';
     finalTab = Math.min(finalTab, s.allRounds.length - 1);
-    s.allRounds.forEach((rd, i) => tabs.append(el('button', { class: i === finalTab ? 'on' : '', text: `รอบ ${i + 1}: ${rd.prompt}`, onclick: () => { finalTab = i; render(); } })));
+    s.allRounds.forEach((rd, i) => tabs.append(el('button', { class: i === finalTab ? 'on' : '', text: `รอบ ${i + 1}: ${rd.prompt}${rd.answer && s.settings.mode === 'answer' ? ` (${rd.answer})` : ''}`, onclick: () => { finalTab = i; render(); } })));
     const rd = s.allRounds[finalTab];
-    renderWall($('finalWall'), finalTab, rd.drawings, { names: true, tally: s.settings.voting ? rd.tally : null });
+    renderWall($('finalWall'), finalTab, rd.drawings, { names: true, tally: s.settings.mode === 'none' ? null : rd.tally });
   }
   tick();
 }
@@ -270,6 +359,7 @@ socket.on('state', s => { offset = s.serverNow - Date.now(); state = s; roomCode
 
 $('btnNext').onclick = () => socket.emit('host:next');
 $('btnStart').onclick = () => socket.emit('host:next');
+$('btnReplay').onclick = () => { $('wall').dataset.key = ''; render(); };
 $('btnAdd').onclick = () => socket.emit('host:addtime', 30);
 $('btnEdit').onclick = showBuilder;
 $('btnFull').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
