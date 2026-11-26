@@ -1,0 +1,88 @@
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap');
+
+:root {
+  --bg: #07090f;
+  --ink: #f3f5fb;
+  --muted: #9aa6c2;
+  --line: rgba(255,255,255,.14);
+  --card: linear-gradient(150deg, #17507a 0%, #1d3f6e 45%, #123a5a 100%);
+  --accent: #ff8a3d;
+  --accent2: #7c5cff;
+  --ok: #3ddc97;
+  --radius: 18px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+html { background: var(--bg); }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Kanit', system-ui, sans-serif;
+  font-weight: 300;
+  -webkit-font-smoothing: antialiased;
+}
+.stage-bg {
+  background:
+    repeating-linear-gradient(115deg, transparent 0 46px, rgba(74,144,226,.09) 46px 47px),
+    radial-gradient(1200px 600px at 20% -10%, #13284a 0%, transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  min-height: 100%;
+}
+h1, h2, h3 { font-weight: 600; margin: 0; letter-spacing: -.01em; }
+button { font: inherit; cursor: pointer; }
+input, select, textarea { font: inherit; color: inherit; }
+
+.eyebrow { font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: #cfe0f5; display: flex; align-items: center; gap: 8px; }
+.eyebrow::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px #fff; }
+
+.card {
+  background: var(--card);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius);
+  background-clip: padding-box;
+  position: relative;
+  box-shadow: 0 30px 80px rgba(0,0,0,.5);
+}
+.card::before {
+  content: ''; position: absolute; inset: -1.5px; border-radius: inherit; z-index: -1;
+  background: linear-gradient(160deg, #fff 0%, #9fb6ff 40%, #8a6bff 100%);
+}
+
+.btn {
+  border: 0; border-radius: 999px; padding: 14px 28px; font-weight: 500; font-size: 17px;
+  color: #fff; background: linear-gradient(180deg, #3a3532, #1f1b19);
+  box-shadow: inset 0 0 0 1.5px #ff7a3d, 0 10px 30px rgba(0,0,0,.45);
+  transition: transform .12s, filter .12s;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.primary { background: linear-gradient(135deg, var(--accent), #ff5f6d); box-shadow: 0 10px 30px rgba(255,110,80,.35); }
+.btn.ghost { background: rgba(255,255,255,.08); box-shadow: inset 0 0 0 1px var(--line); }
+.btn.small { padding: 9px 16px; font-size: 14px; }
+.link { background: none; border: 0; color: #cfe0f5; text-decoration: underline; text-underline-offset: 4px; font-size: 14px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 13px; color: var(--muted); letter-spacing: .04em; }
+.input {
+  background: rgba(0,0,0,.25); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 14px; font-size: 16px; outline: none; width: 100%;
+}
+.input:focus { border-color: #9fb6ff; box-shadow: 0 0 0 3px rgba(159,182,255,.2); }
+select.input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, #cfe0f5 50%), linear-gradient(135deg, #cfe0f5 50%, transparent 50%); background-position: calc(100% - 18px) 52%, calc(100% - 13px) 52%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 34px; }
+select.input option { color: #111; }
+
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.toggle input { display: none; }
+.toggle .sw { width: 46px; height: 26px; border-radius: 99px; background: rgba(255,255,255,.18); position: relative; flex: none; transition: background .2s; }
+.toggle .sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: transform .2s; }
+.toggle input:checked + .sw { background: var(--ok); }
+.toggle input:checked + .sw::after { transform: translateX(20px); }
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+
+@keyframes pop { from { opacity: 0; transform: scale(.6) rotate(-4deg); } to { opacity: 1; transform: none; } }
+@keyframes floaty { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }

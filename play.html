@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#07090f">
+<title>Draw Party — ผู้เล่น</title>
+<link rel="stylesheet" href="/style.css">
+<style>
+  html, body { overscroll-behavior: none; }
+  .view { min-height: 100dvh; display: flex; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+  .mid { justify-content: center; align-items: center; text-align: center; gap: 14px; }
+  .joincard { width: 100%; max-width: 420px; padding: 26px 22px; display: flex; flex-direction: column; gap: 14px; text-align: left; }
+  .joincard h1 { font-size: 28px; margin: 8px 0 4px; }
+  #code { text-transform: uppercase; letter-spacing: .3em; font-size: 26px; font-weight: 600; text-align: center; }
+  .err { color: #ff8b8b; font-size: 14px; min-height: 18px; }
+  .big { font-size: 26px; font-weight: 600; }
+  .emoji { font-size: 64px; animation: floaty 2.4s ease-in-out infinite; }
+
+  /* drawing */
+  .dhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .dprompt { font-size: 18px; font-weight: 500; line-height: 1.25; }
+  .dprompt small { display: block; font-size: 12px; color: var(--muted); font-weight: 300; letter-spacing: .03em; }
+  .dtime { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+  .dtime.low { color: #ff6b6b; animation: pulse 1s infinite; }
+  .tbar { height: 5px; border-radius: 99px; background: rgba(255,255,255,.12); margin: 8px 0 12px; overflow: hidden; }
+  .tbar > div { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); transition: width .25s linear; }
+  .canvas-wrap { width: 100%; max-width: 560px; margin: 0 auto; aspect-ratio: 1; background: #fff; border-radius: 14px; overflow: hidden; touch-action: none; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+  .tools { max-width: 560px; width: 100%; margin: 12px auto 0; display: flex; flex-direction: column; gap: 10px; }
+  .row { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+  .colors { display: grid; grid-template-columns: repeat(12, 1fr); gap: 6px; }
+  .sw { aspect-ratio: 1; border-radius: 50%; border: 2px solid rgba(255,255,255,.25); padding: 0; }
+  .sw.on { border-color: #fff; box-shadow: 0 0 0 2px var(--accent); transform: scale(1.12); }
+  .sizes { display: flex; gap: 6px; }
+  .tb { min-width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.07); color: #fff; display: grid; place-items: center; font-size: 18px; padding: 0 10px; }
+  .tb.on { background: #fff; color: #111; }
+  .dot { border-radius: 50%; background: currentColor; display: block; }
+  .submit { width: 100%; max-width: 560px; margin: 12px auto 0; display: block; }
+
+  /* voting */
+  .ballot { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .ballot button { border: 3px solid transparent; border-radius: 14px; background: #fff; padding: 6px; position: relative; }
+  .ballot button img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; border-radius: 8px; }
+  .ballot button .no { position: absolute; top: 4px; left: 4px; background: var(--accent); color: #fff; border-radius: 99px; min-width: 28px; height: 28px; display: grid; place-items: center; font-weight: 700; }
+  .ballot button.on { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255,138,61,.4); }
+  .ballot button.on::after { content: '❤️'; position: absolute; bottom: 8px; right: 8px; font-size: 26px; }
+</style>
+</head>
+<body class="stage-bg">
+
+<div id="v-join" class="view mid">
+  <div class="card joincard">
+    <div class="eyebrow">Draw Party</div>
+    <h1>เข้าร่วมเกม 🎨</h1>
+    <div class="field"><label for="code">รหัสห้อง</label><input id="code" class="input" maxlength="4" autocomplete="off" placeholder="ABCD"></div>
+    <div class="field"><label for="name">ชื่อของคุณ</label><input id="name" class="input" maxlength="20" autocomplete="nickname" placeholder="ชื่อเล่น"></div>
+    <div class="err" id="err"></div>
+    <button class="btn primary" id="join">เข้าห้อง</button>
+  </div>
+</div>
+
+<div id="v-wait" class="view mid hidden">
+  <div class="emoji" id="waitEmoji">⏳</div>
+  <div class="big" id="waitTitle"></div>
+  <div class="muted" id="waitSub"></div>
+</div>
+
+<div id="v-draw" class="view hidden">
+  <div class="dhead">
+    <div class="dprompt"><small id="dRound"></small><span id="dPrompt"></span></div>
+    <div class="dtime" id="dTime"></div>
+  </div>
+  <div class="tbar"><div id="dBar"></div></div>
+  <div class="canvas-wrap"><canvas id="cv" width="720" height="720"></canvas></div>
+  <div class="tools">
+    <div class="colors" id="colors"></div>
+    <div class="row">
+      <div class="sizes" id="sizes"></div>
+      <div class="sizes">
+        <button class="tb" id="eraser" title="ยางลบ">🧽</button>
+        <button class="tb" id="undo" title="ย้อนกลับ">↶</button>
+        <button class="tb" id="clear" title="ล้างทั้งหมด">🗑</button>
+      </div>
+    </div>
+  </div>
+  <button class="btn primary submit" id="send">ส่งรูปขึ้นจอ ✨</button>
+</div>
+
+<div id="v-vote" class="view hidden">
+  <div class="dhead">
+    <div class="dprompt"><small>โหวตรูปที่ชอบที่สุด</small><span id="vPrompt"></span></div>
+    <div class="dtime" id="vTime"></div>
+  </div>
+  <div class="ballot" id="ballot"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/play.js"></script>
+</body>
+</html>
