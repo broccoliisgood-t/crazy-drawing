@@ -1,20 +1,21 @@
 const $ = id => document.getElementById(id);
 const socket = io();
 
-// [prompt shown on screen, secret answer]
-const PAIRS = [
-  ['วาดสัตว์ที่เกี่ยวกับคริสต์มาส', 'ไก่งวง'], ['วาดสัตว์ที่เกี่ยวกับคริสต์มาส', 'กวางเรนเดียร์'], ['วาดของที่เกี่ยวกับคริสต์มาส', 'ต้นคริสต์มาส'],
-  ['วาดของที่เกี่ยวกับคริสต์มาส', 'ถุงเท้าคริสต์มาส'], ['วาดตัวละครคริสต์มาส', 'ซานตาคลอส'], ['วาดตัวละครคริสต์มาส', 'มนุษย์หิมะ'],
-  ['วาดสัตว์', 'ช้าง'], ['วาดสัตว์', 'ยีราฟ'], ['วาดสัตว์', 'เพนกวิน'], ['วาดสัตว์', 'ปลาหมึก'], ['วาดสัตว์', 'แมวนอนหลับ'],
-  ['วาดผลไม้', 'ทุเรียน'], ['วาดผลไม้', 'สับปะรด'], ['วาดผลไม้', 'แตงโม'], ['วาดอาหาร', 'ส้มตำ'], ['วาดอาหาร', 'ข้าวมันไก่'],
-  ['วาดอาหาร', 'พิซซ่า'], ['วาดขนม', 'โดนัท'], ['วาดยานพาหนะ', 'ตุ๊กตุ๊ก'], ['วาดยานพาหนะ', 'เครื่องบิน'], ['วาดยานพาหนะ', 'จักรยาน'],
-  ['วาดสถานที่', 'ชายหาด'], ['วาดสถานที่', 'วัด'], ['วาดสิ่งของในบ้าน', 'พัดลม'], ['วาดสิ่งของในบ้าน', 'ตู้เย็น'], ['วาดอาชีพ', 'หมอ'],
-  ['วาดอาชีพ', 'นักบินอวกาศ'], ['วาดกีฬา', 'ฟุตบอล'], ['วาดกีฬา', 'มวยไทย'], ['วาดสิ่งของในออฟฟิศ', 'เครื่องถ่ายเอกสาร'], ['วาดเครื่องดนตรี', 'กีตาร์'],
-];
+// ---- random questions from the bank in questions.js, filtered by category and level ----
+const BANK = window.QUESTION_BANK || [['ทั่วไป', 'วาดสัตว์', 'ช้าง', 'ตัวใหญ่มาก', 'มีงวงยาว', 'ง่าย']];
+function pickQuestion(avoid = []) {
+  let f = {}; try { f = settings || {}; } catch { /* settings not created yet on first load */ }
+  const cat = f.randCat || 'all', lvl = f.randLevel || 'all';
+  let pool = BANK.filter(q => (cat === 'all' || q[0] === cat) && (lvl === 'all' || q[5] === lvl));
+  if (!pool.length) pool = BANK;
+  const fresh = pool.filter(q => !avoid.includes(q[2]));
+  const list = fresh.length ? fresh : pool;
+  return list[Math.floor(Math.random() * list.length)];
+}
+const fromQuestion = (q, seconds) => ({ prompt: q[1], answer: q[2], hints: [q[3], q[4]].filter(Boolean), seconds });
+const newRound = (avoid, seconds = 60) => fromQuestion(pickQuestion(avoid), seconds);
 const TIMES = [[30, '30 วินาที'], [60, '1 นาที'], [90, '1 นาที 30 วิ'], [120, '2 นาที'], [180, '3 นาที'], [300, '5 นาที'], [420, '7 นาที'], [600, '10 นาที'], [900, '15 นาที']];
 const fmtDur = s => s < 60 ? `${s} วินาที` : (s % 60 ? `${Math.floor(s / 60)} นาที ${s % 60} วิ` : `${s / 60} นาที`);
-const randPair = (avoid = []) => { const pool = PAIRS.filter(p => !avoid.includes(p[1])); return pool[Math.floor(Math.random() * pool.length)] || PAIRS[0]; };
-const newRound = (avoid, seconds = 60) => { const [prompt, answer] = randPair(avoid); return { prompt, answer, seconds }; };
 const MODE = { answer: 'Host ตัดสิน', vote: 'โหวต', none: 'ไม่แข่ง' };
 
 function el(tag, props = {}, ...kids) {
@@ -62,7 +63,7 @@ function renderRounds() {
     sel.addEventListener('change', () => { r.seconds = +sel.value; summarize(); });
     box.append(el('div', { class: 'round' },
       el('div', { class: 'num', text: i + 1 }), inp, ans,
-      el('button', { class: 'iconbtn dice', title: 'สุ่มโจทย์และคำตอบ', onclick: () => { const [p, a] = randPair(settings.rounds.map(x => x.answer)); r.prompt = p; r.answer = a; inp.value = p; ans.value = a; summarize(); } }, '🎲'),
+      el('button', { class: 'iconbtn dice', title: 'สุ่มโจทย์ คำตอบ และคำใบ้', onclick: () => { settings.rounds[i] = fromQuestion(pickQuestion(settings.rounds.map(x => x.answer)), r.seconds); renderRounds(); } }, '🎲'),
       sel,
       el('button', { class: 'iconbtn del', title: 'ลบรอบนี้', onclick: () => { if (settings.rounds.length > 1) { settings.rounds.splice(i, 1); renderRounds(); } } }, '✕')));
     // Hints: up to 3, written by the host, revealed one by one during drawing
@@ -113,6 +114,24 @@ function loadBuilder() {
   renderRounds();
 }
 ['title', 'maxPlayers', 'mode', 'music', 'voteSeconds', 'showNames', 'showPromptOnPhone'].forEach(k => $(k).addEventListener('input', summarize));
+// Random filters + "randomize every round"
+(function setupRandomBar() {
+  const cs = $('randCat');
+  (window.QUESTION_CATS || []).forEach(c => cs.append(el('option', { value: c, text: `${c} (${BANK.filter(q => q[0] === c).length})` })));
+  cs.value = settings.randCat || 'all'; $('randLevel').value = settings.randLevel || 'all';
+  const save = () => { settings.randCat = cs.value; settings.randLevel = $('randLevel').value; localStorage.setItem('dp_settings2', JSON.stringify(settings)); paintPool(); };
+  cs.addEventListener('change', save); $('randLevel').addEventListener('change', save);
+  function paintPool() {
+    const n = BANK.filter(q => (cs.value === 'all' || q[0] === cs.value) && ($('randLevel').value === 'all' || q[5] === $('randLevel').value)).length;
+    $('randCount').textContent = `มี ${n} ข้อให้สุ่ม`;
+  }
+  paintPool();
+  $('randAll').onclick = () => {
+    const used = [];
+    settings.rounds = settings.rounds.map(r => { const q = fromQuestion(pickQuestion(used), r.seconds); used.push(q.answer); return q; });
+    renderRounds();
+  };
+})();
 $('toggleAns').onclick = () => {
   showAnswers = !showAnswers;
   $('toggleAns').textContent = showAnswers ? '🙈 ซ่อนคำตอบ' : '👁 แสดงคำตอบ';
