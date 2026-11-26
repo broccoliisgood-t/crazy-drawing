@@ -17,8 +17,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 4e6 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
+app.use(express.static(__dirname));
 // LAN address, so the QR code works for phones when the host opened http://localhost
 app.get('/info', (req, res) => {
   const ips = [];
