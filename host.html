@@ -19,6 +19,16 @@
   .round-head { display: grid; grid-template-columns: 34px 1.3fr 1fr 44px 150px 36px; gap: 10px; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
   .round { display: grid; grid-template-columns: 34px 1.3fr 1fr 44px 150px 36px; gap: 10px; align-items: center; margin-bottom: 10px; animation: fadein .25s ease-out; }
   @keyframes fadein { from { opacity: 0; transform: translateY(-4px); } }
+  .hintrow { display: grid; grid-template-columns: 34px 1fr 1fr 1fr; gap: 10px; align-items: center; margin: -2px 0 16px; padding-left: 44px; }
+  .hintrow .hl { grid-column: 1 / 2; font-size: 13px; color: var(--violet); white-space: nowrap; margin-left: -44px; }
+  .hintrow .input { padding: 9px 12px; font-size: 14px; }
+  .hints { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: -6px 0 14px; }
+  .hints:empty { display: none; }
+  .hint { padding: 8px 18px; border-radius: 99px; background: #fffaf0; color: #8a5a00; font-size: clamp(18px, 2vw, 28px); font-weight: 500;
+    box-shadow: inset 0 0 0 1.5px rgba(227,169,47,.55), 0 8px 20px rgba(227,169,47,.18); }
+  .hint.new { animation: pop .6s cubic-bezier(.3,1.6,.5,1); }
+  .hints.small { margin: 6px 0 0; gap: 6px; }
+  .hints.small .hint { font-size: clamp(13px, 1.2vw, 18px); padding: 5px 14px; }
   .round .num { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 500;
     background: radial-gradient(circle at 35% 30%, #8fe0b4, #3f9467 60%, #23603f); box-shadow: inset 0 1px 0 rgba(255,255,255,.5); }
   .iconbtn { width: 44px; height: 46px; border-radius: 14px; border: 1px solid rgba(120,110,150,.2); background: rgba(255,255,255,.75); color: var(--ink); font-size: 18px; }
@@ -146,6 +156,8 @@
     .round select { grid-column: 2 / 4; }
     .round .del { grid-column: 3; grid-row: 1; }
     .round .dice { grid-column: 3; grid-row: 2; }
+    .hintrow { grid-template-columns: 1fr; padding-left: 0; }
+    .hintrow .hl { margin-left: 0; }
     .qr { width: 70vw; margin: 0 auto; }
   }
 </style>
@@ -210,11 +222,12 @@
     <div class="slot" id="slotTop">
       <div class="ctrls" id="ctrls">
         <button class="btn ghost small hidden" id="btnReplay">เล่นซ้ำ ↻</button>
+        <button class="btn ghost small hidden" id="btnHint">💡 ให้คำใบ้</button>
         <button class="btn ghost small" id="btnAdd" title="เพิ่มเวลา 30 วินาที">+30 วิ</button>
         <button class="btn primary small" id="btnNext">ถัดไป →</button>
       </div>
     </div>
-    <div style="justify-self:end"><button class="btn ghost small" id="btnFull">เต็มจอ</button></div>
+    <div style="justify-self:end; display:flex; gap:8px"><button class="btn ghost small" id="btnSound" title="เสียงนาฬิกา 10 วินาทีสุดท้าย">🔊 เสียง</button><button class="btn ghost small" id="btnFull">เต็มจอ</button></div>
   </div>
 
   <section id="s-lobby" class="screen center">
@@ -240,6 +253,7 @@
   <section id="s-drawing" class="screen center">
     <div class="prompt-label" id="drawLabel"></div>
     <div class="prompt" id="drawPrompt"></div>
+    <div class="hints" id="drawHints"></div>
     <div class="timer" id="drawTimer"></div>
     <div class="bar"><div id="drawBar"></div></div>
     <div class="count" id="drawCount"></div>
@@ -255,6 +269,7 @@
           <div class="k">วาด<span>ตามโจทย์</span></div>
           <div class="rd" id="bcRound"></div>
           <div class="pr" id="bcPrompt"></div>
+          <div class="hints small" id="bcHints"></div>
           <div class="ans hidden" id="bcAnswer">เฉลย <b id="bcAnswerText"></b></div>
           <div class="tm hidden" id="bcTimer"></div>
           <div class="ct" id="bcCount"></div>

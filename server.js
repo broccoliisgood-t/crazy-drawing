@@ -86,6 +86,8 @@ function cleanSettings(s = {}) {
   const rounds = (Array.isArray(s.rounds) ? s.rounds : []).slice(0, 20).map(r => ({
     prompt: String(r.prompt || '').trim().slice(0, 120) || 'วาดอะไรก็ได้ที่อยากวาด',
     answer: String(r.answer || '').trim().slice(0, 60),
+    // up to 3 hints, revealed one at a time by the host while players draw
+    hints: (Array.isArray(r.hints) ? r.hints : []).map(h => String(h || '').trim().slice(0, 80)).filter(Boolean).slice(0, 3),
     seconds: Math.min(1800, Math.max(10, Math.round(+r.seconds || 60))),
   }));
   if (!rounds.length) rounds.push({ prompt: 'วาดอะไรก็ได้ที่อยากวาด', seconds: 60 });
@@ -155,6 +157,7 @@ function publicState(room) {
     code: room.code, settings: room.settings, phase: room.phase, round: r,
     endsAt: room.endsAt, serverNow: Date.now(), players: playerList(room),
     shown: !!room.shown[r],
+    hintsShown: room.hintsShown[r] || 0,
   };
   if (r >= 0 && ['drawing', 'gallery', 'voting', 'judging', 'results'].includes(room.phase)) st.drawings = roundDrawings(room, r);
   if (room.phase === 'judging') st.picks = room.picks[r] || [];
@@ -182,6 +185,7 @@ function broadcast(room) {
     // Secret answers never reach phones until the reveal; the prompt can be big-screen only too
     mine.settings = { ...room.settings, rounds: room.settings.rounds.map(x => ({ seconds: x.seconds, prompt: room.settings.showPromptOnPhone ? x.prompt : '' })) };
     if (['judging', 'results'].includes(room.phase)) mine.answer = room.settings.rounds[room.round].answer;
+    if (room.round >= 0) mine.hints = room.settings.rounds[room.round].hints.slice(0, room.hintsShown[room.round] || 0);
     if (room.phase === 'results') {
       mine.myScore = st.tally[p.id] || 0;
       mine.myRank = room.settings.mode === 'answer' ? (room.picks[room.round] || []).indexOf(p.id) + 1 : 0;
@@ -253,7 +257,7 @@ io.on('connection', socket => {
   socket.on('host:create', (settings, cb) => {
     const code = newCode();
     room = { code, hostToken: id(), settings: cleanSettings(settings), phase: 'lobby', round: -1,
-      players: new Map(), drawings: {}, votes: {}, picks: {}, shown: {}, timer: null, endsAt: null, touched: Date.now() };
+      players: new Map(), drawings: {}, votes: {}, picks: {}, shown: {}, hintsShown: {}, timer: null, endsAt: null, touched: Date.now() };
     rooms.set(code, room);
     role = 'host';
     socket.join(`h:${code}`);
@@ -293,6 +297,11 @@ io.on('connection', socket => {
     else if (list.length < 3 && room.drawings[r]?.[pid]) list.push(pid);
     broadcast(room);
   });
+  socket.on('host:hint', () => {
+    if (!isHost() || room.phase !== 'drawing') return;
+    const r = room.round, n = room.settings.rounds[r].hints.length;
+    if ((room.hintsShown[r] || 0) < n) { room.hintsShown[r] = (room.hintsShown[r] || 0) + 1; broadcast(room); }
+  });
   socket.on('host:kick', pid => {
     if (!isHost()) return;
     const p = room.players.get(pid);
@@ -304,7 +313,7 @@ io.on('connection', socket => {
   socket.on('host:restart', () => {
     if (!isHost()) return;
     clearTimer(room);
-    room.phase = 'lobby'; room.round = -1; room.drawings = {}; room.votes = {}; room.picks = {}; room.shown = {};
+    room.phase = 'lobby'; room.round = -1; room.drawings = {}; room.votes = {}; room.picks = {}; room.shown = {}; room.hintsShown = {};
     broadcast(room);
   });
 

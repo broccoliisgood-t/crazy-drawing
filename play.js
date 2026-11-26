@@ -144,6 +144,14 @@ function render() {
     if (me.submitted) return wait('✨', 'ส่งรูปแล้ว!', 'ดูจอกลางได้เลย รอเพื่อน ๆ วาดเสร็จ');
     $('dRound').textContent = `รอบ ${r + 1}/${s.settings.rounds.length}`;
     $('dPrompt').textContent = prompt || 'ดูโจทย์บนจอกลาง';
+    // Hints revealed by the host so far; buzz the phone when a new one arrives
+    const hints = s.hints || [], box = $('dHints'), had = +box.dataset.n || 0;
+    if (had !== hints.length) {
+      box.textContent = '';
+      hints.forEach((h, i) => { const sp = document.createElement('span'); sp.textContent = `💡 ${h}`; if (i >= had) sp.className = 'new'; box.append(sp); });
+      if (hints.length > had && had >= 0 && box.dataset.n !== undefined) navigator.vibrate?.(120);
+      box.dataset.n = hints.length;
+    }
     show('v-draw'); tick(); return;
   }
 

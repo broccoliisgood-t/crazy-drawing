@@ -64,6 +64,15 @@ function renderRounds() {
       el('button', { class: 'iconbtn dice', title: 'สุ่มโจทย์และคำตอบ', onclick: () => { const [p, a] = randPair(settings.rounds.map(x => x.answer)); r.prompt = p; r.answer = a; inp.value = p; ans.value = a; summarize(); } }, '🎲'),
       sel,
       el('button', { class: 'iconbtn del', title: 'ลบรอบนี้', onclick: () => { if (settings.rounds.length > 1) { settings.rounds.splice(i, 1); renderRounds(); } } }, '✕')));
+    // Hints: up to 3, written by the host, revealed one by one during drawing
+    r.hints = Array.isArray(r.hints) ? r.hints : [];
+    const hintInputs = [0, 1, 2].map(k => {
+      const h = el('input', { class: 'input ans' + (showAnswers ? '' : ' masked'), maxlength: 80, type: 'text', autocomplete: 'off', spellcheck: 'false', lang: 'th', placeholder: `คำใบ้ ${k + 1}${k ? ' (ไม่ใส่ก็ได้)' : ' เช่น มีขนสีน้ำตาล'}` });
+      h.value = r.hints[k] || '';
+      h.addEventListener('input', () => { r.hints[k] = h.value; summarize(); });
+      return h;
+    });
+    box.append(el('div', { class: 'hintrow' }, el('span', { class: 'hl', text: '💡 คำใบ้' }), ...hintInputs));
   });
   summarize();
 }
@@ -76,9 +85,10 @@ function summarize() {
   $('sumLead').innerHTML = '';
   $('sumLead').append('สรุปเกมวาดรูปความยาวประมาณ ', el('b', { text: `${total} นาที` }), ' สำหรับผู้เล่นสูงสุด ', el('b', { text: `${s.maxPlayers} คน` }), ':');
   $('sumRounds').textContent = `${n} รอบ`;
-  $('sumRoundsP').textContent = n === 1
+  const hintCount = s.rounds.reduce((a, r) => a + (r.hints || []).filter(h => String(h).trim()).length, 0);
+  $('sumRoundsP').textContent = (hintCount ? `มีคำใบ้รวม ${hintCount} ข้อ (Host กดเปิดทีละข้อระหว่างวาด) · ` : '') + (n === 1
     ? `ทุกคนวาดบนมือถือ ${fmtDur(s.rounds[0].seconds)} จากนั้นรูปทั้งหมดจะขึ้นจอกลางพร้อมกัน`
-    : `วาดรวม ${fmtDur(drawSec)} จบแต่ละรอบ รูปทุกคนจะขึ้นจอกลาง ก่อนไปโจทย์ถัดไป`;
+    : `วาดรวม ${fmtDur(drawSec)} จบแต่ละรอบ รูปทุกคนจะขึ้นจอกลาง ก่อนไปโจทย์ถัดไป`);
   $('sumVote').textContent = MODE[s.mode];
   const missing = s.rounds.filter(r => !String(r.answer || '').trim()).length;
   $('sumVoteP').textContent = {
@@ -103,7 +113,7 @@ function loadBuilder() {
 $('toggleAns').onclick = () => {
   showAnswers = !showAnswers;
   $('toggleAns').textContent = showAnswers ? '🙈 ซ่อนคำตอบ' : '👁 แสดงคำตอบ';
-  document.querySelectorAll('.round .ans').forEach(i => i.classList.toggle('masked', !showAnswers));
+  document.querySelectorAll('#rounds .ans').forEach(i => i.classList.toggle('masked', !showAnswers));
 };
 $('addRound').onclick = () => {
   if (settings.rounds.length >= 20) return;
@@ -165,6 +175,13 @@ function chips(box, players, mode) {
 function tileSize(n) { return n <= 4 ? '300px' : n <= 9 ? '240px' : n <= 16 ? '200px' : n <= 30 ? '170px' : '140px'; }
 
 // Keep tiles keyed by drawing so re-renders don't replay the pop-in animation
+function renderHints(box, hints) {
+  if (box.dataset.n === String(hints.length)) return;
+  box.textContent = '';
+  hints.forEach((h, i) => box.append(el('span', { class: 'hint' + (i === hints.length - 1 && (+box.dataset.n || 0) < hints.length ? ' new' : ''), text: `💡 ${h}` })));
+  box.dataset.n = hints.length;
+}
+
 function makeMedia(round, d, i, animate) {
   if (animate && d.anim) {
     const cv = el('canvas', { width: 720, height: 720 });
@@ -328,6 +345,11 @@ function render() {
   $('roundInfo').textContent = r >= 0 && s.phase !== 'final' ? `รอบ ${r + 1}/${total}` : '';
   $('btnAdd').classList.toggle('hidden', !['drawing', 'voting'].includes(s.phase));
   $('btnReplay').classList.toggle('hidden', !(s.phase === 'gallery' && s.shown));
+  const hintList = r >= 0 ? (R[r].hints || []) : [], shownHints = hintList.slice(0, s.hintsShown || 0);
+  $('btnHint').classList.toggle('hidden', !(s.phase === 'drawing' && (s.hintsShown || 0) < hintList.length));
+  $('btnHint').textContent = `💡 ให้คำใบ้ (${(s.hintsShown || 0) + 1}/${hintList.length})`;
+  renderHints($('drawHints'), shownHints);
+  renderHints($('bcHints'), shownHints);
   const nextLabel = {
     lobby: null, drawing: 'จบเวลาเลย →',
     gallery: !s.shown ? 'แสดงรูปวาด ▶' : s.settings.mode === 'answer' ? 'เฉลยคำตอบ →' : s.settings.mode === 'vote' ? 'เริ่มโหวต →' : (r + 1 < total ? `รอบที่ ${r + 2} →` : 'สรุปผล →'),
@@ -422,10 +444,47 @@ function render() {
   tick();
 }
 
+// ---- clock sound for the last 10 seconds (synthesized, no audio files) ----
+let audioCtx = null, soundOn = localStorage.getItem('dp_sound') !== 'off', lastBeep = null;
+function audio() {
+  if (!audioCtx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null; audioCtx = new AC(); }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+// Browsers only allow sound after a click, so unlock audio on the host's first click
+document.addEventListener('pointerdown', () => audio(), { once: true });
+function tone(freq, dur, type = 'sine', vol = 0.35, when = 0) {
+  const ac = audio(); if (!ac || !soundOn) return;
+  const t = ac.currentTime + when, o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.05);
+}
+function clockTick(sec) {
+  // tick-tock, getting a little more urgent for the last 3 seconds
+  const urgent = sec <= 3;
+  tone(sec % 2 ? 1500 : 1150, 0.06, 'square', urgent ? 0.22 : 0.14);
+  tone(sec % 2 ? 3000 : 2300, 0.03, 'sine', 0.08);
+  if (urgent) tone(880, 0.12, 'triangle', 0.18, 0.02);
+}
+function timeUpBell() {
+  [[1318, 0], [1568, 0.12], [2093, 0.24]].forEach(([f, w]) => { tone(f, 1.2, 'sine', 0.3, w); tone(f * 2, 0.6, 'sine', 0.06, w); });
+}
+function soundFor(left) {
+  const key = `${state.code}:${state.round}:${state.phase}`;
+  if (lastBeep && lastBeep.key === key && lastBeep.sec === left) return;
+  const prev = lastBeep && lastBeep.key === key ? lastBeep.sec : null;
+  lastBeep = { key, sec: left };
+  if (prev === null) return; // never beep on the first frame after a refresh
+  if (left >= 1 && left <= 10 && left < prev) clockTick(left);
+  if (left === 0 && prev > 0) timeUpBell();
+}
+
 function tick() {
   if (!state) return;
   const s = state;
   const left = s.endsAt ? Math.max(0, Math.ceil((s.endsAt - (Date.now() + offset)) / 1000)) : 0;
+  if ((s.phase === 'drawing' || s.phase === 'voting') && s.endsAt) soundFor(left);
   const txt = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
   if (s.phase === 'drawing') {
     $('drawTimer').textContent = s.endsAt ? txt : 'หมดเวลา!';
@@ -442,8 +501,12 @@ socket.on('state', s => { offset = s.serverNow - Date.now(); state = s; roomCode
 $('btnNext').onclick = () => socket.emit('host:next');
 $('btnStart').onclick = () => socket.emit('host:next');
 $('btnReplay').onclick = () => { $('board').dataset.key = ''; render(); };
+$('btnHint').onclick = () => socket.emit('host:hint');
 $('btnAdd').onclick = () => socket.emit('host:addtime', 30);
 $('btnEdit').onclick = showBuilder;
+function paintSound() { $('btnSound').textContent = soundOn ? '🔊 เสียง' : '🔇 ปิดเสียง'; }
+$('btnSound').onclick = () => { soundOn = !soundOn; localStorage.setItem('dp_sound', soundOn ? 'on' : 'off'); paintSound(); if (soundOn) tone(1500, 0.06, 'square', 0.14); };
+paintSound();
 $('btnFull').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
 $('btnRestart').onclick = () => confirm('เริ่มเกมใหม่ด้วยห้องและผู้เล่นเดิม? รูปเดิมจะถูกล้าง') && socket.emit('host:restart');
 $('btnNew').onclick = () => { sessionStorage.removeItem('dp_host'); location.reload(); };
