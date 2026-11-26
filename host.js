@@ -51,7 +51,8 @@ function renderRounds() {
     const inp = el('input', { class: 'input', maxlength: 120, placeholder: 'โจทย์ เช่น วาดสัตว์' });
     inp.value = r.prompt;
     inp.addEventListener('input', () => { r.prompt = inp.value; summarize(); });
-    const ans = el('input', { class: 'input ans', maxlength: 60, autocomplete: 'off', type: showAnswers ? 'text' : 'password', placeholder: 'คำตอบ เช่น ช้าง' });
+    // A normal text field (not type=password, which blocks Thai input); masked with CSS instead
+    const ans = el('input', { class: 'input ans' + (showAnswers ? '' : ' masked'), maxlength: 60, type: 'text', autocomplete: 'off', autocorrect: 'off', spellcheck: 'false', lang: 'th', placeholder: 'พิมพ์คำตอบเอง เช่น ไก่งวง' });
     ans.value = r.answer || '';
     ans.addEventListener('input', () => { r.answer = ans.value; summarize(); });
     const sel = el('select', { class: 'input' }, TIMES.map(([v, t]) => el('option', { value: v, text: t })));
@@ -102,7 +103,7 @@ function loadBuilder() {
 $('toggleAns').onclick = () => {
   showAnswers = !showAnswers;
   $('toggleAns').textContent = showAnswers ? '🙈 ซ่อนคำตอบ' : '👁 แสดงคำตอบ';
-  document.querySelectorAll('.round .ans').forEach(i => { i.type = showAnswers ? 'text' : 'password'; });
+  document.querySelectorAll('.round .ans').forEach(i => i.classList.toggle('masked', !showAnswers));
 };
 $('addRound').onclick = () => {
   if (settings.rounds.length >= 20) return;
