@@ -195,6 +195,17 @@
         <select id="voteSeconds" class="input" style="width:150px">
           <option value="20">20 วินาที</option><option value="30" selected>30 วินาที</option><option value="45">45 วินาที</option><option value="60">1 นาที</option><option value="90">1 นาที 30 วิ</option>
         </select></div>
+      <div class="toggle"><span>🎵 เพลงคลอ</span>
+        <span style="display:flex; gap:8px; align-items:center">
+          <select id="music" class="input" style="width:230px">
+            <option value="jingle">Jingle Bells · สนุก</option>
+            <option value="wewish">We Wish You a Merry Christmas · ร่าเริง</option>
+            <option value="deck">Deck the Halls · สดใส</option>
+            <option value="silent">Silent Night · ผ่อนคลาย</option>
+            <option value="none">ไม่มีเพลง</option>
+          </select>
+          <button class="btn ghost small" id="musicTry" type="button">▶ ฟัง</button>
+        </span></div>
       <label class="toggle"><span>แสดงชื่อคนวาดบนจอกลาง</span><input type="checkbox" id="showNames" checked><span class="sw"></span></label>
       <label class="toggle"><span>แสดงโจทย์บนมือถือผู้เล่นด้วย</span><input type="checkbox" id="showPromptOnPhone" checked><span class="sw"></span></label>
     </div>
@@ -227,7 +238,7 @@
         <button class="btn primary small" id="btnNext">ถัดไป →</button>
       </div>
     </div>
-    <div style="justify-self:end; display:flex; gap:8px"><button class="btn ghost small" id="btnSound" title="เสียงนาฬิกา 10 วินาทีสุดท้าย">🔊 เสียง</button><button class="btn ghost small" id="btnFull">เต็มจอ</button></div>
+    <div style="justify-self:end; display:flex; gap:8px"><button class="btn ghost small" id="btnMusic" title="เปิด/ปิดเพลงคลอ">🎵 เพลง</button><button class="btn ghost small" id="btnSound" title="เสียงนาฬิกา 10 วินาทีสุดท้าย">🔊 เสียง</button><button class="btn ghost small" id="btnFull">เต็มจอ</button></div>
   </div>
 
   <section id="s-lobby" class="screen center">
@@ -299,6 +310,7 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="/ornaments.js"></script>
+<script src="/music.js"></script>
 <script src="/host.js"></script>
 </body>
 </html>

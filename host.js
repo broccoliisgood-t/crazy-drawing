@@ -39,6 +39,7 @@ function readBuilder() {
   settings.title = $('title').value;
   settings.maxPlayers = +$('maxPlayers').value || 30;
   settings.mode = $('mode').value;
+  settings.music = $('music').value;
   settings.voteSeconds = +$('voteSeconds').value;
   settings.showNames = $('showNames').checked;
   settings.showPromptOnPhone = $('showPromptOnPhone').checked;
@@ -97,19 +98,21 @@ function summarize() {
     none: 'แค่วาดแล้วชมรูปบนจอกลาง ไม่ต้องแข่ง ทุกคนสนุกได้เท่ากัน',
   }[s.mode];
   $('sumWall').textContent = s.showNames ? 'มีชื่อ' : 'ไม่ระบุชื่อ';
-  $('sumWallP').textContent = s.showNames
+  const songName = { jingle: 'Jingle Bells', wewish: 'We Wish You a Merry Christmas', deck: 'Deck the Halls', silent: 'Silent Night' }[s.music];
+  $('sumWallP').textContent = (songName ? `เพลงคลอ ${songName} · ` : 'ไม่มีเพลงคลอ · ') + (s.showNames
     ? 'ทุกรูปบนจอกลางมีชื่อคนวาดกำกับ'
-    : 'ซ่อนชื่อคนวาด ทายกันเองว่าใครวาดรูปไหน';
+    : 'ซ่อนชื่อคนวาด ทายกันเองว่าใครวาดรูปไหน');
   $('voteSecWrap').classList.toggle('hidden', s.mode !== 'vote');
 }
 
 function loadBuilder() {
   $('title').value = settings.title; $('maxPlayers').value = settings.maxPlayers;
-  $('mode').value = settings.mode || 'answer'; $('voteSeconds').value = settings.voteSeconds;
+  $('mode').value = settings.mode || 'answer';
+  $('music').value = settings.music || 'jingle'; $('voteSeconds').value = settings.voteSeconds;
   $('showNames').checked = settings.showNames; $('showPromptOnPhone').checked = settings.showPromptOnPhone;
   renderRounds();
 }
-['title', 'maxPlayers', 'mode', 'voteSeconds', 'showNames', 'showPromptOnPhone'].forEach(k => $(k).addEventListener('input', summarize));
+['title', 'maxPlayers', 'mode', 'music', 'voteSeconds', 'showNames', 'showPromptOnPhone'].forEach(k => $(k).addEventListener('input', summarize));
 $('toggleAns').onclick = () => {
   showAnswers = !showAnswers;
   $('toggleAns').textContent = showAnswers ? '🙈 ซ่อนคำตอบ' : '👁 แสดงคำตอบ';
@@ -142,8 +145,8 @@ $('create').onclick = () => {
 // ===================== LIVE =====================
 let state = null, offset = 0;
 
-function showLive() { $('builder').classList.add('hidden'); $('live').classList.remove('hidden'); document.body.classList.add('no-corners'); }
-function showBuilder() { $('live').classList.add('hidden'); $('builder').classList.remove('hidden'); document.body.classList.remove('no-corners'); loadBuilder(); window.scrollTo(0, 0); }
+function showLive() { stopPreview(); setTimeout(syncMusic, 0); $('builder').classList.add('hidden'); $('live').classList.remove('hidden'); document.body.classList.add('no-corners'); }
+function showBuilder() { setTimeout(syncMusic, 0); $('live').classList.add('hidden'); $('builder').classList.remove('hidden'); document.body.classList.remove('no-corners'); loadBuilder(); window.scrollTo(0, 0); }
 
 async function setupJoin() {
   let origin = location.origin;
@@ -480,10 +483,33 @@ function soundFor(left) {
   if (left === 0 && prev > 0) timeUpBell();
 }
 
+// ---- background music ----
+let musicOn = localStorage.getItem('dp_music') !== 'off', previewing = false, musicLevel = 1;
+function syncMusic() {
+  if (previewing || !window.XmasMusic) return;
+  const live = !$('live').classList.contains('hidden');
+  const id = live && musicOn && state ? state.settings.music : 'none';
+  if (id && id !== 'none') { if (XmasMusic.playing !== id) { XmasMusic.play(audio(), id); musicLevel = 1; } }
+  else if (XmasMusic.playing) XmasMusic.stop();
+}
+function paintMusic() { $('btnMusic').textContent = musicOn ? '🎵 เพลง' : '🎵 ปิดเพลง'; $('btnMusic').style.opacity = musicOn ? 1 : .6; }
+$('btnMusic').onclick = () => { musicOn = !musicOn; localStorage.setItem('dp_music', musicOn ? 'on' : 'off'); paintMusic(); syncMusic(); };
+paintMusic();
+$('musicTry').onclick = () => {
+  if (previewing) { previewing = false; XmasMusic.stop(); $('musicTry').textContent = '▶ ฟัง'; return; }
+  const id = $('music').value; if (id === 'none') return;
+  previewing = true; XmasMusic.play(audio(), id); $('musicTry').textContent = '■ หยุด';
+};
+$('music').addEventListener('change', () => { if (previewing) { XmasMusic.play(audio(), $('music').value); if ($('music').value === 'none') { previewing = false; XmasMusic.stop(); $('musicTry').textContent = '▶ ฟัง'; } } });
+function stopPreview() { if (previewing) { previewing = false; XmasMusic.stop(); $('musicTry').textContent = '▶ ฟัง'; } }
+
 function tick() {
   if (!state) return;
   const s = state;
   const left = s.endsAt ? Math.max(0, Math.ceil((s.endsAt - (Date.now() + offset)) / 1000)) : 0;
+  // keep the music soft under the last-10-seconds clock
+  const lvl = (s.phase === 'drawing' || s.phase === 'voting') && s.endsAt && left <= 10 ? .25 : 1;
+  if (lvl !== musicLevel && window.XmasMusic) { musicLevel = lvl; XmasMusic.setLevel(lvl); }
   if ((s.phase === 'drawing' || s.phase === 'voting') && s.endsAt) soundFor(left);
   const txt = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
   if (s.phase === 'drawing') {
@@ -496,7 +522,7 @@ function tick() {
 }
 setInterval(tick, 250);
 
-socket.on('state', s => { offset = s.serverNow - Date.now(); state = s; roomCode = s.code; render(); });
+socket.on('state', s => { offset = s.serverNow - Date.now(); state = s; roomCode = s.code; render(); syncMusic(); });
 
 $('btnNext').onclick = () => socket.emit('host:next');
 $('btnStart').onclick = () => socket.emit('host:next');

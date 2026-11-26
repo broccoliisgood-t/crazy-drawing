@@ -97,6 +97,7 @@ function cleanSettings(s = {}) {
     // answer: host picks drawings closest to the secret answer · vote: players vote · none: just the wall
     mode: ['answer', 'vote', 'none'].includes(s.mode) ? s.mode : (s.voting ? 'vote' : 'answer'),
     voteSeconds: Math.min(600, Math.max(10, Math.round(+s.voteSeconds || 30))),
+    music: ['none', 'jingle', 'wewish', 'deck', 'silent'].includes(s.music) ? s.music : 'jingle',
     showNames: s.showNames !== false,
     showPromptOnPhone: s.showPromptOnPhone !== false,
     maxPlayers: Math.min(200, Math.max(2, Math.round(+s.maxPlayers || 50))),
