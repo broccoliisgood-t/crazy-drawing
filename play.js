@@ -4,7 +4,7 @@ const params = new URLSearchParams(location.search);
 let state = null, offset = 0, me = null, joined = false;
 
 const views = ['v-join', 'v-wait', 'v-draw', 'v-vote'];
-const show = v => views.forEach(x => $(x).classList.toggle('hidden', x !== v));
+const show = v => { views.forEach(x => $(x).classList.toggle('hidden', x !== v)); document.body.classList.toggle('busy', v === 'v-draw' || v === 'v-vote'); };
 function wait(emoji, title, sub = '') { $('waitEmoji').textContent = emoji; $('waitTitle').textContent = title; $('waitSub').textContent = sub; show('v-wait'); }
 
 // ---------------- join ----------------
@@ -213,3 +213,13 @@ socket.on('state', s => { offset = s.serverNow - Date.now(); state = s; render()
 socket.on('disconnect', () => { if (joined) wait('📡', 'กำลังเชื่อมต่อใหม่…', 'อย่าปิดหน้านี้นะ'); });
 // Keep the screen from sleeping while drawing, where supported
 document.addEventListener('pointerdown', () => navigator.wakeLock?.request('screen').catch(() => {}), { once: true });
+
+// A few glass ornaments; hidden while drawing or voting so they never cover the tools
+(function decorate() {
+  const d = $('decor'); if (!d || !window.ORN) return;
+  const orn = (k, css) => { const o = document.createElement('div'); o.className = 'orn'; o.style.cssText = css; o.innerHTML = ORN[k]; d.append(o); };
+  const b = document.createElement('div'); b.className = 'blob'; b.style.cssText = 'width:90px;height:90px;right:-30px;top:-24px'; d.append(b);
+  orn('star', 'width:64px;left:10px;top:18px;transform:rotate(-14deg)');
+  orn('bauble', 'width:58px;right:16px;bottom:18px;--r:6deg;transform-origin:50% 0;animation:sway 4s ease-in-out infinite');
+  orn('cane', 'width:46px;left:12px;bottom:18px;transform:rotate(-14deg)');
+})();

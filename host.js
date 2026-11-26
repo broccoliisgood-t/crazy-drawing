@@ -132,8 +132,8 @@ $('create').onclick = () => {
 // ===================== LIVE =====================
 let state = null, offset = 0;
 
-function showLive() { $('builder').classList.add('hidden'); $('live').classList.remove('hidden'); }
-function showBuilder() { $('live').classList.add('hidden'); $('builder').classList.remove('hidden'); loadBuilder(); window.scrollTo(0, 0); }
+function showLive() { $('builder').classList.add('hidden'); $('live').classList.remove('hidden'); document.body.classList.add('no-corners'); }
+function showBuilder() { $('live').classList.add('hidden'); $('builder').classList.remove('hidden'); document.body.classList.remove('no-corners'); loadBuilder(); window.scrollTo(0, 0); }
 
 async function setupJoin() {
   let origin = location.origin;
@@ -149,6 +149,7 @@ const imgUrl = (r, pid) => `/img/${state.code}/${r}/${pid}`;
 
 function show(id) {
   ['s-lobby', 's-drawing', 's-wall', 's-results', 's-final'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+  document.body.classList.toggle('decor-back', id === 's-results' || id === 's-final');
 }
 
 function chips(box, players, mode) {
@@ -164,6 +165,83 @@ function chips(box, players, mode) {
 function tileSize(n) { return n <= 4 ? '300px' : n <= 9 ? '240px' : n <= 16 ? '200px' : n <= 30 ? '170px' : '140px'; }
 
 // Keep tiles keyed by drawing so re-renders don't replay the pop-in animation
+function makeMedia(round, d, i, animate) {
+  if (animate && d.anim) {
+    const cv = el('canvas', { width: 720, height: 720 });
+    const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, 720, 720);
+    loadStrokes(round, d.pid).then(st => st ? animateStrokes(cv, st, ANIM_MS, Math.min(i, 30) * 150)
+      : cv.replaceWith(el('img', { src: imgUrl(round, d.pid), alt: '' })));
+    return cv;
+  }
+  return el('img', { src: imgUrl(round, d.pid), alt: `รูปของ ${d.name}`, loading: 'lazy' });
+}
+
+// Pick a grid (columns x rows) that leaves a 2-3 cell wide center for the prompt and gives the biggest tiles
+function boardLayout(n, W, H) {
+  let best = null;
+  for (let c = 4; c <= 11; c++) {
+    const w = c % 2 ? 3 : (c >= 8 ? 4 : 2), h = 2;
+    const r = Math.max(3, Math.ceil((n + w * h) / c));
+    const cell = Math.min(W / c, H / r);
+    if (!best || cell > best.cell + 0.5) best = { c, r, w, h, cell };
+  }
+  return best;
+}
+
+let lastBoard = null;
+function renderBoard(round, drawings, players, { numbered = false, names = true, picks = null, animate = false } = {}) {
+  const board = $('board');
+  const key = `${state.code}:${round}`;
+  if (board.dataset.key !== key) { board.querySelectorAll('.bt').forEach(n => n.remove()); board.dataset.key = key; }
+  const have = new Map([...board.querySelectorAll('.bt')].map(c => [c.dataset.k, c]));
+  const keep = new Set();
+  drawings.forEach((d, i) => {
+    const k = 'd:' + d.pid; keep.add(k);
+    let t = have.get(k);
+    if (have.has('m:' + d.pid)) have.get('m:' + d.pid).remove();
+    if (!t) {
+      t = el('div', { class: 'bt', style: `animation-delay:${Math.min(i, 20) * 60}ms` }, el('div', { class: 'md' }, makeMedia(round, d, i, animate)), el('div', { class: 'nm' }));
+      t.dataset.k = k;
+      t.addEventListener('click', () => state.phase === 'judging' ? socket.emit('host:pick', d.pid) : openLightbox(round, d, names ? d.name : ''));
+      board.append(t);
+    }
+    t.querySelector('.nm').textContent = names ? d.name : '';
+    t.querySelectorAll('.no,.rank').forEach(n => n.remove());
+    const rank = picks ? picks.indexOf(d.pid) : -1;
+    t.classList.toggle('picked', rank >= 0);
+    if (rank >= 0) t.append(el('div', { class: 'rank', text: MEDALS[rank] }));
+    if (numbered) t.append(el('div', { class: 'no', text: i + 1 }));
+  });
+  // Players in the room who didn't send a drawing get an empty dashed circle
+  players.filter(p => p.connected && !drawings.some(d => d.pid === p.id)).forEach(p => {
+    const k = 'm:' + p.id; keep.add(k);
+    if (!have.has(k)) {
+      const t = el('div', { class: 'bt miss' }, el('div', { class: 'md' }, el('div', { class: 'ring' })), el('div', { class: 'nm', text: names ? p.name : '' }));
+      t.dataset.k = k; board.append(t);
+    }
+  });
+  have.forEach((n, k) => { if (!keep.has(k)) n.remove(); });
+  layoutBoard();
+}
+function layoutBoard() {
+  const board = $('board');
+  if ($('s-wall').classList.contains('hidden')) return;
+  const n = board.querySelectorAll('.bt').length;
+  const W = board.clientWidth - 44, H = board.clientHeight - 40;
+  const L = boardLayout(n, W, H);
+  board.style.gridTemplateColumns = `repeat(${L.c}, minmax(0, 1fr))`;
+  board.style.gridTemplateRows = `repeat(${L.r}, minmax(0, 1fr))`;
+  board.style.gridAutoFlow = 'row dense';
+  const cs = Math.floor((L.c - L.w) / 2) + 1, rs = Math.floor((L.r - L.h) / 2) + 1;
+  const center = $('boardCenter');
+  center.style.gridColumn = `${cs} / span ${L.w}`;
+  center.style.gridRow = `${rs} / span ${L.h}`;
+  const promptLen = ($('bcPrompt').textContent || '').length;
+  const size = Math.max(22, Math.min(L.cell * L.w / Math.max(6, promptLen * 0.62), L.cell * 0.42, 72));
+  board.style.setProperty('--prompt-size', `${Math.round(size)}px`);
+}
+window.addEventListener('resize', layoutBoard);
+
 function renderWall(box, round, drawings, { numbered = false, tally = null, names = true, picks = null, animate = false } = {}) {
   const key = `${state.code}:${round}`;
   if (box.dataset.key !== key) { box.textContent = ''; box.dataset.key = key; }
@@ -287,21 +365,20 @@ function render() {
     chips($('drawChips'), s.players, 'draw');
   }
 
-  $('s-wall').classList.toggle('judging', s.phase === 'judging');
   if ((s.phase === 'gallery' && s.shown) || s.phase === 'voting' || s.phase === 'judging') {
     show('s-wall');
     const voting = s.phase === 'voting', judging = s.phase === 'judging';
-    $('wallLabel').textContent = `รอบ ${r + 1} · ${voting ? 'โหวตบนมือถือได้เลย' : judging ? `โจทย์: ${R[r].prompt}` : 'ผลงานทุกคน'}`;
-    $('wallTitle').textContent = '';
-    if (judging) $('wallTitle').append('เฉลย: ', el('span', { class: 'reveal', text: R[r].answer || '—' }));
-    else $('wallTitle').textContent = R[r].prompt;
-    $('wallHint').classList.toggle('hidden', !judging);
-    $('wallHint').textContent = s.picks?.length >= 3 ? 'เลือกครบ 3 อันดับแล้ว กด "ประกาศผล" ได้เลย' : `คลิกรูปที่ใกล้คำตอบที่สุด เรียงตามอันดับ ${s.picks?.length ? `(เลือกแล้ว ${s.picks.length}/3)` : '1 → 3'} · คลิกซ้ำเพื่อยกเลิก`;
-    $('voteTimer').classList.toggle('hidden', !voting);
-    $('wallCount').textContent = voting
-      ? `โหวตแล้ว ${s.players.filter(p => p.voted).length}/${online.length}`
-      : `${s.drawings.length} รูป`;
-    renderWall($('wall'), r, s.drawings, { numbered: voting, names: s.settings.showNames, picks: judging ? s.picks : null, animate: s.phase === 'gallery' });
+    $('board').classList.toggle('judging', judging);
+    $('boardPill').textContent = judging
+      ? (s.picks?.length >= 3 ? 'เลือกครบแล้ว กด "ประกาศผล" ได้เลย' : `คลิกภาพที่ใกล้คำตอบที่สุด · อันดับ ${(s.picks?.length || 0) + 1}`)
+      : voting ? 'โหวตภาพที่ชอบบนมือถือได้เลย' : `ผลงานทุกคน · ${s.drawings.length} ภาพ`;
+    $('bcRound').textContent = `รอบ ${r + 1}/${total}`;
+    $('bcPrompt').textContent = R[r].prompt;
+    $('bcAnswer').classList.toggle('hidden', !judging || !R[r].answer);
+    $('bcAnswerText').textContent = R[r].answer || '';
+    $('bcTimer').classList.toggle('hidden', !voting);
+    $('bcCount').textContent = voting ? `โหวตแล้ว ${s.players.filter(p => p.voted).length}/${online.length}` : '';
+    renderBoard(r, s.drawings, s.players, { numbered: voting, names: s.settings.showNames, picks: judging ? s.picks : null, animate: s.phase === 'gallery' });
   }
 
   if (s.phase === 'results') {
@@ -352,7 +429,7 @@ function tick() {
     const totalSec = s.settings.rounds[s.round].seconds;
     $('drawBar').style.width = `${s.endsAt ? (left / totalSec) * 100 : 0}%`;
   }
-  if (s.phase === 'voting') { $('voteTimer').textContent = s.endsAt ? txt : '0:00'; $('voteTimer').classList.toggle('low', left <= 5); }
+  if (s.phase === 'voting') { $('bcTimer').textContent = s.endsAt ? txt : '0:00'; $('bcTimer').classList.toggle('low', left <= 5); }
 }
 setInterval(tick, 250);
 
@@ -360,7 +437,7 @@ socket.on('state', s => { offset = s.serverNow - Date.now(); state = s; roomCode
 
 $('btnNext').onclick = () => socket.emit('host:next');
 $('btnStart').onclick = () => socket.emit('host:next');
-$('btnReplay').onclick = () => { $('wall').dataset.key = ''; render(); };
+$('btnReplay').onclick = () => { $('board').dataset.key = ''; render(); };
 $('btnAdd').onclick = () => socket.emit('host:addtime', 30);
 $('btnEdit').onclick = showBuilder;
 $('btnFull').onclick = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.();
@@ -377,5 +454,20 @@ socket.on('connect', () => {
     else sessionStorage.removeItem('dp_host');
   });
 });
+
+// Glass ornaments around the edges of the screen (drawn in ornaments.js)
+(function decorate() {
+  const d = $('decor'); if (!d || !window.ORN) return;
+  const orn = (k, css) => { const o = document.createElement('div'); o.className = 'orn'; o.style.cssText = css; o.innerHTML = ORN[k]; d.append(o); };
+  const blob = (css, pink) => { const b = document.createElement('div'); b.className = 'blob' + (pink ? ' pink' : ''); b.style.cssText = css; d.append(b); };
+  blob('width:130px;height:130px;left:-40px;top:-40px');
+  blob('width:70px;height:70px;right:180px;top:-24px', true);
+  blob('width:110px;height:110px;right:-36px;top:42%');
+  orn('star', 'width:112px;left:2px;top:74px;transform:rotate(-12deg)');
+  orn('flake', 'width:96px;right:4px;top:78px;transform:rotate(12deg);opacity:.95');
+  orn('cane', 'width:78px;left:6px;bottom:8px;transform:rotate(-14deg)');
+  orn('tree', 'width:76px;left:86px;bottom:-6px;transform:rotate(8deg)');
+  orn('bauble', 'width:92px;right:16px;bottom:8px;--r:6deg;transform-origin:50% 0;animation:sway 4s ease-in-out infinite');
+})();
 
 loadBuilder();
