@@ -169,7 +169,7 @@ function makeMedia(round, d, i, animate) {
   if (animate && d.anim) {
     const cv = el('canvas', { width: 720, height: 720 });
     const c = cv.getContext('2d'); c.fillStyle = '#fff'; c.fillRect(0, 0, 720, 720);
-    loadStrokes(round, d.pid).then(st => st ? animateStrokes(cv, st, ANIM_MS, Math.min(i, 30) * 150)
+    loadStrokes(round, d.pid).then(st => st ? animateStrokes(cv, st, ANIM_MS, Math.min(i, 30) * 75)
       : cv.replaceWith(el('img', { src: imgUrl(round, d.pid), alt: '' })));
     return cv;
   }
@@ -255,7 +255,7 @@ function renderWall(box, round, drawings, { numbered = false, tally = null, name
       if (animate && d.anim) {
         media = el('canvas', { width: 720, height: 720 });
         media.getContext('2d').fillStyle = '#fff'; media.getContext('2d').fillRect(0, 0, 720, 720);
-        loadStrokes(round, d.pid).then(st => st ? animateStrokes(media, st, ANIM_MS, Math.min(i, 30) * 150)
+        loadStrokes(round, d.pid).then(st => st ? animateStrokes(media, st, ANIM_MS, Math.min(i, 30) * 75)
           : media.replaceWith(el('img', { src: imgUrl(round, d.pid), alt: '' })));
       } else media = el('img', { src: imgUrl(round, d.pid), alt: `รูปของ ${d.name}`, loading: 'lazy' });
       t = el('div', { class: 'tile', style: `animation-delay:${Math.min(i, 20) * 70}ms` }, media);
@@ -275,7 +275,7 @@ function renderWall(box, round, drawings, { numbered = false, tally = null, name
 }
 
 const MEDALS = ['🥇', '🥈', '🥉'];
-const ANIM_MS = 6000;
+const ANIM_MS = 3000; // stroke replay length (2x faster than before)
 
 // ---- line-by-line replay of a player's strokes ----
 const strokeCache = new Map();
@@ -313,7 +313,7 @@ function animateStrokes(canvas, strokes, duration = ANIM_MS, delay = 0) {
 function openLightbox(round, d, cap) {
   $('lbCap').textContent = cap;
   $('lbImg').classList.toggle('hidden', !!d.anim); $('lbCv').classList.toggle('hidden', !d.anim);
-  if (d.anim) loadStrokes(round, d.pid).then(st => st && animateStrokes($('lbCv'), st, 4000));
+  if (d.anim) loadStrokes(round, d.pid).then(st => st && animateStrokes($('lbCv'), st, 2000));
   else $('lbImg').src = imgUrl(round, d.pid);
   $('lightbox').classList.remove('hidden');
 }
@@ -329,7 +329,7 @@ function render() {
   $('btnAdd').classList.toggle('hidden', !['drawing', 'voting'].includes(s.phase));
   $('btnReplay').classList.toggle('hidden', !(s.phase === 'gallery' && s.shown));
   const nextLabel = {
-    lobby: 'เริ่มเกม →', drawing: 'จบเวลาเลย →',
+    lobby: null, drawing: 'จบเวลาเลย →',
     gallery: !s.shown ? 'แสดงรูปวาด ▶' : s.settings.mode === 'answer' ? 'เฉลยคำตอบ →' : s.settings.mode === 'vote' ? 'เริ่มโหวต →' : (r + 1 < total ? `รอบที่ ${r + 2} →` : 'สรุปผล →'),
     voting: 'ปิดโหวต →', judging: 'ประกาศผล →', results: r + 1 < total ? `รอบที่ ${r + 2} →` : 'สรุปผล →',
   }[s.phase];
@@ -415,6 +415,10 @@ function render() {
     const rd = s.allRounds[finalTab];
     renderWall($('finalWall'), finalTab, rd.drawings, { names: true, tally: s.settings.mode === 'none' ? null : rd.tally });
   }
+  // Put the host controls in the middle of whichever screen is showing
+  const slot = (s.phase === 'drawing' || (s.phase === 'gallery' && !s.shown)) ? 'slotDraw'
+    : ['gallery', 'voting', 'judging'].includes(s.phase) ? 'slotBoard' : s.phase === 'results' ? 'slotRes' : 'slotTop';
+  if ($('ctrls').parentElement.id !== slot) { $(slot).append($('ctrls')); if (slot === 'slotBoard') layoutBoard(); }
   tick();
 }
 
